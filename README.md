@@ -7,7 +7,7 @@ Next.js-Shop mit Supabase (Postgres-Datenbank und Foto-Speicher) und Verwaltung 
 - Startseite, Shop mit Kategorien, Filter und Sortierung, Produktseiten, Suche, Warenkorb und Kasse
 - Bestellungen landen in der Datenbank, der Lagerbestand sinkt automatisch. Wird eine Bestellung storniert, gehen die Artikel zurück ins Lager.
 - Verwaltung mit Passwort: Produkte mit zwei Fotos, Bestellungen mit Status, Startbild, Drop-Countdown, Banner, Versandtext, Newsletter-Liste
-
+ 
 ## Auf Vercel bringen
 
 1. **GitHub:** Neues Repository anlegen (z. B. `castilla-shop`) und alle Dateien aus diesem Ordner hochladen.
