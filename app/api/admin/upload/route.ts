@@ -7,15 +7,19 @@ const MAX = 4 * 1024 * 1024;
 const TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
 const BUCKET = "produkte";
 
-/** Stores product photos in Vercel Blob (if connected) or otherwise in Supabase Storage. */
+/**
+ * Stores product photos in Vercel Blob (if connected) or otherwise in Supabase Storage.
+ * Newer Blob stores connect via BLOB_STORE_ID + Vercel OIDC, older ones via BLOB_READ_WRITE_TOKEN;
+ * @vercel/blob picks the right one by itself.
+ */
 export async function POST(req: Request) {
   const denied = await requireAdmin();
   if (denied) return denied;
 
-  const blobToken = process.env.BLOB_READ_WRITE_TOKEN;
+  const hasBlob = !!(process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID);
   const supaBase = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/$/, "");
   const supaKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
-  if (!blobToken && !(supaBase && supaKey)) {
+  if (!hasBlob && !(supaBase && supaKey)) {
     return NextResponse.json({ error: "Kein Foto-Speicher verbunden. Lege in Vercel unter „Storage“ einen Blob-Speicher an und deploye neu." }, { status: 500 });
   }
 
@@ -28,9 +32,9 @@ export async function POST(req: Request) {
   const stem = file.name.toLowerCase().replace(/\.[^.]+$/, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "foto";
   const path = `${Date.now()}-${randomBytes(4).toString("hex")}-${stem}.${ext}`;
 
-  if (blobToken) {
+  if (hasBlob) {
     try {
-      const blob = await put(`${BUCKET}/${path}`, file, { access: "public", contentType: file.type, token: blobToken });
+      const blob = await put(`${BUCKET}/${path}`, file, { access: "public", contentType: file.type });
       return NextResponse.json({ url: blob.url });
     } catch (err) {
       console.error("blob upload failed", err);
