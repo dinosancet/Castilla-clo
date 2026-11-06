@@ -2,9 +2,9 @@ import postgres from "postgres";
 
 let client: postgres.Sql | null = null;
 
-/** Connection string from the Vercel–Supabase integration (POSTGRES_URL) or set by hand (DATABASE_URL). */
+/** Connection string set by the Vercel integration (Neon: DATABASE_URL, Supabase: POSTGRES_URL) or by hand. */
 export function connectionString() {
-  const raw = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+  const raw = process.env.DATABASE_URL || process.env.POSTGRES_URL;
   if (!raw) throw new Error("POSTGRES_URL bzw. DATABASE_URL ist nicht gesetzt.");
   return raw;
 }
@@ -21,8 +21,8 @@ export function clientOptions(raw: string) {
 export function sql() {
   if (!client) {
     const { url, ssl } = clientOptions(connectionString());
-    // prepare:false is required for Supabase's transaction pooler (port 6543).
-    client = postgres(url, { ssl, prepare: false, max: 5, idle_timeout: 20, connect_timeout: 10 });
+    // prepare:false is required for poolers in transaction mode (Supabase port 6543, Neon "-pooler").
+    client = postgres(url, { ssl, prepare: false, max: 5, idle_timeout: 20, connect_timeout: 10, onnotice: () => {} });
   }
   return client;
 }

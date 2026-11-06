@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-img-element */
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { CATEGORIES, CATEGORY_KEYS, STATUS_LABEL, eur, type Category, type Order, type OrderStatus, type Product, type Settings } from "@/lib/catalog";
+import { CATEGORIES, CATEGORY_KEYS, MAX_IMAGES, STATUS_LABEL, eur, sizesOf, stockOf, type Category, type Order, type OrderStatus, type Product, type Settings } from "@/lib/catalog";
 import { uploadImage } from "@/lib/image-client";
 
 type Props = { products: Product[]; orders: Order[]; settings: Settings; subscribers: { email: string; createdAt: string }[] };
@@ -79,41 +79,142 @@ function PhotoSlot({ label, url, onChange, maxEdge, setMsg }: { label: string; u
   );
 }
 
-type Draft = { id: string | null; name: string; price: string; category: Category; stock: string; sizes: string; color: string; description: string; isNew: boolean; img1: string | null; img2: string | null };
-const empty: Draft = { id: null, name: "", price: "", category: "hoodie", stock: "0", sizes: "S, M, L, XL", color: "#2a2622", description: "", isNew: false, img1: null, img2: null };
+type SizeRow = { key: number; name: string; stock: string };
+type Draft = { id: string | null; name: string; price: string; category: Category; sizes: SizeRow[]; color: string; description: string; isNew: boolean; images: string[] };
+let rowKey = 1;
+const row = (name: string, stock = "0"): SizeRow => ({ key: rowKey++, name, stock });
+const PRESETS: Record<string, string[]> = {
+  "S–XL": ["S", "M", "L", "XL"],
+  "XS–XXL": ["XS", "S", "M", "L", "XL", "XXL"],
+  "One Size": ["One Size"],
+  "Hosen 28–36": ["28", "30", "32", "34", "36"],
+};
+const emptyDraft = (): Draft => ({ id: null, name: "", price: "", category: "hoodie", sizes: PRESETS["S–XL"].map((n) => row(n)), color: "#2a2622", description: "", isNew: false, images: [] });
+
+function PhotoManager({ images, onChange, setMsg }: { images: string[]; onChange: (imgs: string[]) => void; setMsg: (m: { ok: boolean; text: string } | null) => void }) {
+  const [busy, setBusy] = useState(0);
+  const [drag, setDrag] = useState<number | null>(null);
+  const [over, setOver] = useState<number | null>(null);
+  const free = MAX_IMAGES - images.length;
+
+  function move(from: number, to: number) {
+    if (to < 0 || to >= images.length || from === to) return;
+    const next = images.slice();
+    const [item] = next.splice(from, 1);
+    next.splice(to, 0, item);
+    onChange(next);
+  }
+  async function addFiles(files: FileList | null) {
+    const list = Array.from(files ?? []).slice(0, Math.max(0, free));
+    if (!list.length) return;
+    if ((files?.length ?? 0) > free) setMsg({ ok: false, text: `Es sind höchstens ${MAX_IMAGES} Fotos möglich. Die ersten ${free} werden hochgeladen.` });
+    else setMsg(null);
+    setBusy(list.length);
+    const added: string[] = [];
+    for (const f of list) {
+      try { added.push(await uploadImage(f)); }
+      catch (err: any) { setMsg({ ok: false, text: `${f.name}: ${err.message}` }); }
+      setBusy((n) => n - 1);
+    }
+    if (added.length) {
+      onChange([...images, ...added]);
+      setMsg({ ok: true, text: `${added.length} ${added.length === 1 ? "Foto" : "Fotos"} hochgeladen. Jetzt speichern, damit sie im Shop erscheinen.` });
+    }
+  }
+
+  return (
+    <div className="photos">
+      {images.map((src, i) => (
+        <div
+          key={src}
+          className={`photo${drag === i ? " dragging" : ""}${over === i && drag !== i ? " over" : ""}`}
+          draggable
+          onDragStart={() => setDrag(i)}
+          onDragOver={(e) => { e.preventDefault(); setOver(i); }}
+          onDragLeave={() => setOver((o) => (o === i ? null : o))}
+          onDrop={(e) => { e.preventDefault(); if (drag !== null) move(drag, i); setDrag(null); setOver(null); }}
+          onDragEnd={() => { setDrag(null); setOver(null); }}
+        >
+          <div className="pi">
+            <img src={src} alt="" />
+            <span className="badge">{i === 0 ? "Hauptbild" : i + 1}</span>
+          </div>
+          <div className="pa">
+            <button type="button" aria-label="Nach vorne" disabled={i === 0} onClick={() => move(i, i - 1)}>←</button>
+            <button type="button" aria-label="Foto entfernen" onClick={() => onChange(images.filter((_, n) => n !== i))}>×</button>
+            <button type="button" aria-label="Nach hinten" disabled={i === images.length - 1} onClick={() => move(i, i + 1)}>→</button>
+          </div>
+        </div>
+      ))}
+      {free > 0 ? (
+        <label className="addphoto">
+          {busy ? `Lädt … (${busy})` : <>+ Fotos hinzufügen<br />{images.length}/{MAX_IMAGES}</>}
+          <input type="file" accept="image/*" multiple hidden disabled={!!busy} onChange={(e) => { const f = e.target.files; addFiles(f).finally(() => { e.target.value = ""; }); }} />
+        </label>
+      ) : null}
+    </div>
+  );
+}
+
+function SizeEditor({ sizes, onChange }: { sizes: SizeRow[]; onChange: (rows: SizeRow[]) => void }) {
+  const update = (key: number, patch: Partial<SizeRow>) => onChange(sizes.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  const total = sizes.reduce((a, r) => a + (parseInt(r.stock, 10) || 0), 0);
+  return (
+    <div>
+      <div className="sizerows">
+        <div className="sizerow small"><span>Größe</span><span>Bestand</span><span /></div>
+        {sizes.map((r) => (
+          <div className="sizerow" key={r.key}>
+            <input className="field" value={r.name} aria-label="Größe" onChange={(e) => update(r.key, { name: e.target.value })} />
+            <input className="field" type="number" min={0} inputMode="numeric" value={r.stock} aria-label={`Bestand ${r.name}`} onChange={(e) => update(r.key, { stock: e.target.value })} />
+            <button type="button" className="link" disabled={sizes.length === 1} onClick={() => onChange(sizes.filter((x) => x.key !== r.key))}>Entfernen</button>
+          </div>
+        ))}
+      </div>
+      <div className="presets">
+        <button type="button" className="link" onClick={() => onChange([...sizes, row("")])}>+ Größe hinzufügen</button>
+        <span className="small">Vorlagen:</span>
+        {Object.entries(PRESETS).map(([label, names]) => (
+          <button key={label} type="button" className="link" onClick={() => {
+            const keep = new Map(sizes.map((r) => [r.name, r.stock]));
+            onChange(names.map((n) => row(n, keep.get(n) ?? "0")));
+          }}>{label}</button>
+        ))}
+      </div>
+      <div className="small" style={{ marginTop: 8 }}>Gesamt: {total} Stück</div>
+    </div>
+  );
+}
 
 function ProductsPanel({ products, onChange }: { products: Product[]; onChange: () => void }) {
-  const [d, setD] = useState<Draft>(empty);
+  const [d, setD] = useState<Draft>(emptyDraft);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setD((x) => ({ ...x, [k]: v }));
 
   function edit(p: Product) {
-    setD({ id: p.id, name: p.name, price: (p.priceCents / 100).toFixed(2), category: p.category, stock: String(p.stock), sizes: p.sizes.join(", "), color: p.color, description: p.description, isNew: p.isNew, img1: p.imageUrl, img2: p.imageUrl2 });
+    setD({
+      id: p.id, name: p.name, price: (p.priceCents / 100).toFixed(2), category: p.category,
+      sizes: sizesOf(p).map((n) => row(n, String(stockOf(p, n)))),
+      color: p.color, description: p.description, isNew: p.isNew, images: p.images,
+    });
     setMsg(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    const sizes = d.sizes.map((r) => ({ name: r.name.trim(), stock: Math.max(0, parseInt(r.stock, 10) || 0) })).filter((r) => r.name);
+    if (!sizes.length) return setMsg({ ok: false, text: "Lege mindestens eine Größe an, zum Beispiel „One Size“." });
+    const price = Math.round(parseFloat(d.price.replace(",", ".")) * 100);
+    if (!Number.isFinite(price)) return setMsg({ ok: false, text: "Bitte gib einen gültigen Preis ein." });
     setBusy(true);
     setMsg(null);
-    const body = {
-      name: d.name.trim(),
-      priceCents: Math.round(parseFloat(d.price.replace(",", ".")) * 100),
-      category: d.category,
-      sizes: d.sizes.split(",").map((s) => s.trim()).filter(Boolean),
-      stock: parseInt(d.stock, 10) || 0,
-      color: d.color,
-      description: d.description.trim(),
-      isNew: d.isNew,
-      imageUrl: d.img1 ?? d.img2,
-      imageUrl2: d.img1 ? d.img2 : null,
-    };
+    const body = { name: d.name.trim(), priceCents: price, category: d.category, sizes, color: d.color, description: d.description.trim(), isNew: d.isNew, images: d.images };
     try {
       if (d.id) await send(`/api/admin/products?id=${encodeURIComponent(d.id)}`, "PUT", body);
       else await send("/api/admin/products", "POST", body);
       setMsg({ ok: true, text: d.id ? "Änderungen gespeichert." : "Produkt angelegt." });
-      setD(empty);
+      setD(emptyDraft());
       onChange();
     } catch (err: any) {
       setMsg({ ok: false, text: err.message });
@@ -136,34 +237,39 @@ function ProductsPanel({ products, onChange }: { products: Product[]; onChange: 
             {CATEGORY_KEYS.map((k) => <option key={k} value={k}>{CATEGORIES[k].label}</option>)}
           </select>
         </label>
-        <label className="l">Lagerbestand<input className="field" type="number" min={0} required value={d.stock} onChange={(e) => set("stock", e.target.value)} /></label>
-        <label className="l">Größen (mit Komma getrennt, leer für One Size)<input className="field" value={d.sizes} onChange={(e) => set("sizes", e.target.value)} /></label>
         <label className="l">Farbe der Platzhalter-Grafik<input className="field" type="color" value={d.color} onChange={(e) => set("color", e.target.value)} style={{ height: 46, padding: 4 }} /></label>
+        <div className="full">
+          <div className="l" style={{ marginBottom: 8 }}>Größen und Bestand</div>
+          <SizeEditor sizes={d.sizes} onChange={(rows) => set("sizes", rows)} />
+        </div>
         <label className="l full">Beschreibung<textarea className="field" rows={3} value={d.description} onChange={(e) => set("description", e.target.value)} /></label>
         <div className="full">
-          <div className="small" style={{ marginBottom: 8 }}>Das erste Foto ist das Hauptbild, das zweite erscheint beim Darüberfahren. Am besten Hochformat 3:4 auf hellem Hintergrund.</div>
-          <div className="thumbs">
-            <PhotoSlot label="Hauptbild" url={d.img1} onChange={(u) => set("img1", u)} setMsg={setMsg} />
-            <PhotoSlot label="Zweites Bild" url={d.img2} onChange={(u) => set("img2", u)} setMsg={setMsg} />
-          </div>
+          <div className="l" style={{ marginBottom: 4 }}>Fotos</div>
+          <div className="small" style={{ marginBottom: 10 }}>Bis zu {MAX_IMAGES} Fotos. Reihenfolge per Ziehen oder mit ← → ändern. Das erste ist das Hauptbild, das zweite erscheint im Shop beim Darüberfahren. Am besten Hochformat 3:4 auf hellem Hintergrund.</div>
+          <PhotoManager images={d.images} onChange={(imgs) => set("images", imgs)} setMsg={setMsg} />
         </div>
         <label className="l full"><span><input type="checkbox" checked={d.isNew} onChange={(e) => set("isNew", e.target.checked)} /> Als „Neu“ markieren</span></label>
         <div className="full row-actions">
-          <button className="btn" disabled={busy}>{d.id ? "Änderungen speichern" : "Produkt anlegen"}</button>
-          {d.id ? <button type="button" className="btn ghost" onClick={() => { setD(empty); setMsg(null); }}>Neues Produkt</button> : null}
+          <button className="btn" disabled={busy}>{busy ? "Wird gespeichert …" : d.id ? "Änderungen speichern" : "Produkt anlegen"}</button>
+          {d.id ? <button type="button" className="btn ghost" onClick={() => { setD(emptyDraft()); setMsg(null); }}>Abbrechen</button> : null}
         </div>
         <div className={`msg full ${msg ? (msg.ok ? "ok" : "err") : ""}`}>{msg?.text}</div>
       </form>
       <div className="table-wrap">
         <table>
-          <thead><tr><th>Produkt</th><th>Kategorie</th><th>Preis</th><th>Bestand</th><th></th></tr></thead>
+          <thead><tr><th>Produkt</th><th>Kategorie</th><th>Preis</th><th>Bestand je Größe</th><th></th></tr></thead>
           <tbody>
             {products.length ? products.map((p) => (
               <tr key={p.id}>
-                <td>{p.name}{p.isNew ? <> <span className="status">Neu</span></> : null}{p.imageUrl ? null : <span className="small"> (ohne Foto)</span>}</td>
+                <td>{p.name}{p.isNew ? <> <span className="status">Neu</span></> : null}<div className="small">{p.images.length ? `${p.images.length} ${p.images.length === 1 ? "Foto" : "Fotos"}` : "ohne Foto"}</div></td>
                 <td>{CATEGORIES[p.category].label}</td>
                 <td>{eur(p.priceCents)}</td>
-                <td style={p.stock <= 0 ? { color: "var(--danger)" } : undefined}>{p.stock}</td>
+                <td className="stocklist">
+                  {sizesOf(p).map((s, i) => {
+                    const n = stockOf(p, s);
+                    return <span key={s}>{i ? " · " : ""}{s} <b className={n <= 0 ? "zero" : undefined}>{n}</b></span>;
+                  })}
+                </td>
                 <td className="row-actions"><button className="link" onClick={() => edit(p)}>Bearbeiten</button><button className="link" onClick={() => del(p)}>Löschen</button></td>
               </tr>
             )) : <tr><td colSpan={5} className="small">Noch keine Produkte.</td></tr>}

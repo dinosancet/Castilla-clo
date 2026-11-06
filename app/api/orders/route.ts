@@ -3,7 +3,8 @@ import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { sql } from "@/lib/db";
 import { toProduct } from "@/lib/data";
-import { sizesOf, type OrderItem } from "@/lib/catalog";
+import { ready } from "@/lib/migrate";
+import { sizesOf, stockOf, type OrderItem } from "@/lib/catalog";
 
 const OrderInput = z.object({
   items: z
@@ -29,24 +30,28 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: "Bitte prüfe deine Angaben." }, { status: 400 });
   const { items, customer } = parsed.data;
 
+  await ready();
   const ids = [...new Set(items.map((i) => i.id))];
   const rows = await sql()`SELECT * FROM products WHERE id = ANY(${ids})`;
   const products = new Map(rows.map((r) => [r.id as string, toProduct(r)]));
 
   const orderItems: OrderItem[] = [];
-  const perProduct = new Map<string, number>();
+  const perSize = new Map<string, { productId: string; size: string; qty: number }>();
   for (const i of items) {
     const p = products.get(i.id);
     if (!p) return NextResponse.json({ error: "Ein Artikel in deinem Warenkorb ist nicht mehr verfügbar." }, { status: 409 });
     if (!sizesOf(p).includes(i.size)) return NextResponse.json({ error: `Die Größe ${i.size} gibt es für ${p.name} nicht.` }, { status: 409 });
     orderItems.push({ productId: p.id, name: p.name, size: i.size, qty: i.qty, priceCents: p.priceCents });
-    perProduct.set(p.id, (perProduct.get(p.id) ?? 0) + i.qty);
+    const key = `${p.id}\u0000${i.size}`;
+    const prev = perSize.get(key);
+    perSize.set(key, { productId: p.id, size: i.size, qty: (prev?.qty ?? 0) + i.qty });
   }
-  for (const [id, qty] of perProduct) {
-    const p = products.get(id)!;
-    if (p.stock < qty) {
+  for (const { productId, size, qty } of perSize.values()) {
+    const p = products.get(productId)!;
+    const left = stockOf(p, size);
+    if (left < qty) {
       return NextResponse.json(
-        { error: p.stock > 0 ? `Von ${p.name} sind nur noch ${p.stock} Stück verfügbar.` : `${p.name} ist ausverkauft.` },
+        { error: left > 0 ? `Von ${p.name} in ${size} sind nur noch ${left} Stück verfügbar.` : `${p.name} ist in ${size} ausverkauft.` },
         { status: 409 },
       );
     }
@@ -55,22 +60,34 @@ export async function POST(req: Request) {
   const id = orderId();
   const total = orderItems.reduce((sum, i) => sum + i.qty * i.priceCents, 0);
   const db = sql();
-  const agg = db.json([...perProduct].map(([product_id, qty]) => ({ product_id, qty })));
+  const agg = db.json([...perSize.values()].map((x) => ({ product_id: x.productId, size: x.size, qty: x.qty })));
 
-  // One atomic statement: reduce stock for every product and create the order.
-  // If any product no longer has enough stock, the division by zero aborts the whole statement.
+  // One atomic statement: reduce the stock of every ordered size and create the order.
+  // If any size no longer has enough stock, the division by zero aborts the whole statement.
   try {
     await db`
       WITH agg AS (
-        SELECT product_id, qty FROM jsonb_to_recordset(${agg}) AS r(product_id text, qty int)
+        SELECT product_id, size, qty FROM jsonb_to_recordset(${agg}) AS r(product_id text, size text, qty int)
+      ),
+      per AS (
+        SELECT product_id, jsonb_object_agg(size, qty) AS dec, SUM(qty)::int AS total FROM agg GROUP BY product_id
       ),
       upd AS (
-        UPDATE products p SET stock = p.stock - agg.qty, updated_at = now()
-        FROM agg WHERE p.id = agg.product_id AND p.stock >= agg.qty
+        UPDATE products p SET
+          size_stock = p.size_stock || (
+            SELECT jsonb_object_agg(k, COALESCE((p.size_stock->>k)::int, 0) - v::int) FROM jsonb_each_text(per.dec) AS e(k, v)
+          ),
+          stock = GREATEST(p.stock - per.total, 0),
+          updated_at = now()
+        FROM per
+        WHERE p.id = per.product_id
+          AND NOT EXISTS (
+            SELECT 1 FROM jsonb_each_text(per.dec) AS d(k, v) WHERE COALESCE((p.size_stock->>d.k)::int, 0) < d.v::int
+          )
         RETURNING p.id
       ),
       chk AS MATERIALIZED (
-        SELECT 1 / (CASE WHEN (SELECT count(*) FROM upd) = (SELECT count(*) FROM agg) THEN 1 ELSE 0 END) AS ok
+        SELECT 1 / (CASE WHEN (SELECT count(*) FROM upd) = (SELECT count(*) FROM per) THEN 1 ELSE 0 END) AS ok
       )
       INSERT INTO orders (id, status, items, total_cents, customer)
       SELECT ${id}, 'neu', ${db.json(orderItems as any)}, ${total}, ${db.json(customer)} FROM chk WHERE chk.ok = 1

@@ -20,10 +20,16 @@ export type Product = {
   priceCents: number;
   category: Category;
   sizes: string[];
+  /** Units in stock per size, e.g. { S: 3, M: 0 }. */
+  sizeStock: Record<string, number>;
+  /** Sum over all sizes. */
   stock: number;
   color: string;
   description: string;
   isNew: boolean;
+  /** All photos in display order. */
+  images: string[];
+  /** Shortcuts: first and second photo. */
   imageUrl: string | null;
   imageUrl2: string | null;
   updatedAt: string;
@@ -69,6 +75,8 @@ export type Order = {
 };
 
 export const sizesOf = (p: Pick<Product, "sizes">) => (p.sizes.length ? p.sizes : ["One Size"]);
+export const stockOf = (p: Pick<Product, "sizeStock">, size: string) => Math.max(0, Number(p.sizeStock[size] ?? 0));
+export const MAX_IMAGES = 12;
 
 export function eur(cents: number) {
   return new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" }).format(cents / 100);

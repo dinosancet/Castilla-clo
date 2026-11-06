@@ -22,7 +22,7 @@ export default async function ProductPage({ searchParams }: Props) {
   if (!id) notFound();
   const [p, all, s] = await Promise.all([getProduct(id), getProducts(), getSettings()]);
   if (!p) notFound();
-  const imgs = [p.imageUrl, p.imageUrl2].filter(Boolean) as string[];
+  const imgs = p.images;
   const others = all.filter((x) => x.id !== p.id);
   const related = [...sortRecommended(others.filter((x) => x.category === p.category)), ...sortRecommended(others.filter((x) => x.category !== p.category))].slice(0, 4);
   const cat = CATEGORIES[p.category];
@@ -35,8 +35,10 @@ export default async function ProductPage({ searchParams }: Props) {
       <div className="pdp">
         <div className="gallery">
           {imgs.length ? (
-            imgs.map((src) => (
-              <div key={src} className={`g${imgs.length === 1 ? " solo" : ""}`}><img src={src} alt={p.name} /></div>
+            imgs.map((src, i) => (
+              <div key={src} className={`g${imgs.length === 1 || (imgs.length % 2 === 1 && i === 0) ? " solo" : ""}`}>
+                <img src={src} alt={i === 0 ? p.name : `${p.name}, Bild ${i + 1}`} loading={i < 2 ? "eager" : "lazy"} />
+              </div>
             ))
           ) : (
             <div className="g solo"><GarmentArt category={p.category} color={p.color} /></div>

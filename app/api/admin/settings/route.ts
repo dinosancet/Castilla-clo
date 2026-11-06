@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { sql } from "@/lib/db";
+import { ready } from "@/lib/migrate";
 import { badRequest, requireAdmin } from "@/lib/admin";
 
 const SettingsInput = z.object({
@@ -18,6 +19,7 @@ export async function PUT(req: Request) {
   if (denied) return denied;
   const parsed = SettingsInput.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return badRequest("Bitte prüfe die Einstellungen.");
+  await ready();
   const db = sql();
   await db`INSERT INTO settings (id, data) VALUES (1, ${db.json(parsed.data)}) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data`;
   return NextResponse.json({ ok: true });
