@@ -7,6 +7,7 @@ const nextConfig = {
       { source: "/shop/:kategorie", destination: "/shop?kategorie=:kategorie" },
       { source: "/produkt/:id", destination: "/produkt?id=:id" },
       { source: "/bestellung/:id", destination: "/bestellung?id=:id" },
+      { source: "/r/:code", destination: "/api/r?code=:code" },
     ];
   },
 };

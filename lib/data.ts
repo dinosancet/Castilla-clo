@@ -18,6 +18,7 @@ export function toProduct(r: Row): Product {
     color: r.color,
     description: r.description ?? "",
     isNew: !!r.is_new,
+    commissionPercent: Number(r.commission_percent ?? 0),
     images,
     imageUrl: images[0] ?? null,
     imageUrl2: images[1] ?? null,
@@ -33,6 +34,8 @@ export function toOrder(r: Row): Order {
     items: r.items,
     totalCents: Number(r.total_cents),
     customer: r.customer,
+    shippedAt: r.shipped_at ? new Date(r.shipped_at).toISOString() : null,
+    refCode: r.ref_code ?? null,
   };
 }
 

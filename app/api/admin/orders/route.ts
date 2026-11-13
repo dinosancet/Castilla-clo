@@ -10,16 +10,17 @@ export async function PATCH(req: Request) {
   if (denied) return denied;
   const id = new URL(req.url).searchParams.get("id");
   if (!id) return badRequest("Bestell-ID fehlt.");
-  const parsed = z.object({ status: z.enum(["neu", "bezahlt", "versendet", "storniert"]) }).safeParse(await req.json().catch(() => null));
+  const parsed = z.object({ status: z.enum(["neu", "bezahlt", "versendet", "storniert", "retourniert"]) }).safeParse(await req.json().catch(() => null));
   if (!parsed.success) return badRequest("Unbekannter Status.");
   const { status } = parsed.data;
   await ready();
 
-  if (status === "storniert") {
-    // Cancel once and put every item back into the stock of its size, in one statement.
+  if (status === "storniert" || status === "retourniert") {
+    // Close the order once and put every item back into the stock of its size, in one statement.
+    // Any commission for this order is voided automatically (it is derived from the order status).
     await sql()`
       WITH o AS (
-        UPDATE orders SET status = 'storniert' WHERE id = ${id} AND status <> 'storniert' RETURNING items
+        UPDATE orders SET status = ${status} WHERE id = ${id} AND status NOT IN ('storniert','retourniert') RETURNING items
       ),
       it AS (
         SELECT e->>'productId' AS pid, e->>'size' AS sz, SUM((e->>'qty')::int) AS q
@@ -38,7 +39,10 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  const rows = await sql()`UPDATE orders SET status = ${status} WHERE id = ${id} AND status <> 'storniert' RETURNING id`;
-  if (!rows.length) return NextResponse.json({ error: "Stornierte Bestellungen lassen sich nicht mehr ändern." }, { status: 409 });
+  const rows = await sql()`
+    UPDATE orders SET status = ${status},
+      shipped_at = CASE WHEN ${status} = 'versendet' THEN COALESCE(shipped_at, now()) ELSE shipped_at END
+    WHERE id = ${id} AND status NOT IN ('storniert','retourniert') RETURNING id`;
+  if (!rows.length) return NextResponse.json({ error: "Stornierte oder retournierte Bestellungen lassen sich nicht mehr ändern." }, { status: 409 });
   return NextResponse.json({ ok: true });
 }

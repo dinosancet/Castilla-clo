@@ -12,6 +12,8 @@ const SettingsInput = z.object({
   dropText: z.string().max(400),
   dropAt: z.string().datetime().nullable(),
   shippingText: z.string().max(2000),
+  commissionHoldDays: z.number().int().min(0).max(365),
+  refCookieDays: z.number().int().min(1).max(365),
 });
 
 export async function PUT(req: Request) {

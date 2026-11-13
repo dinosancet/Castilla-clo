@@ -43,6 +43,42 @@ FROM (
   GROUP BY id
 ) s
 WHERE p.id = s.id;
+
+-- v3: commission links (affiliate program)
+ALTER TABLE products ADD COLUMN IF NOT EXISTS commission_percent numeric(5,2) NOT NULL DEFAULT 0;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipped_at timestamptz;
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS ref_code text;
+DO $m$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'orders_status_check' AND pg_get_constraintdef(oid) LIKE '%retourniert%'
+  ) THEN
+    ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_status_check;
+    ALTER TABLE orders ADD CONSTRAINT orders_status_check
+      CHECK (status IN ('neu','bezahlt','versendet','storniert','retourniert'));
+  END IF;
+END $m$;
+CREATE TABLE IF NOT EXISTS creators (
+  id text PRIMARY KEY, email text NOT NULL UNIQUE, name text NOT NULL, token text NOT NULL UNIQUE,
+  active boolean NOT NULL DEFAULT true, payout text NOT NULL DEFAULT '', created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS affiliate_links (
+  code text PRIMARY KEY, creator_id text NOT NULL REFERENCES creators(id) ON DELETE CASCADE,
+  product_id text NOT NULL, created_at timestamptz NOT NULL DEFAULT now(), UNIQUE (creator_id, product_id)
+);
+CREATE TABLE IF NOT EXISTS link_clicks (
+  code text NOT NULL REFERENCES affiliate_links(code) ON DELETE CASCADE, visitor text NOT NULL,
+  day date NOT NULL DEFAULT current_date, created_at timestamptz NOT NULL DEFAULT now(), PRIMARY KEY (code, visitor, day)
+);
+CREATE TABLE IF NOT EXISTS commissions (
+  id text PRIMARY KEY, order_id text NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE,
+  creator_id text NOT NULL REFERENCES creators(id) ON DELETE CASCADE, code text NOT NULL,
+  amount_cents integer NOT NULL CHECK (amount_cents >= 0), created_at timestamptz NOT NULL DEFAULT now(), paid_at timestamptz
+);
+ALTER TABLE creators ENABLE ROW LEVEL SECURITY;
+ALTER TABLE affiliate_links ENABLE ROW LEVEL SECURITY;
+ALTER TABLE link_clicks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE commissions ENABLE ROW LEVEL SECURITY;
 `;
 
 let done: Promise<void> | null = null;

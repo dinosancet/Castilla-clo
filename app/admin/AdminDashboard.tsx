@@ -2,11 +2,12 @@
 /* eslint-disable @next/next/no-img-element */
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { CATEGORIES, CATEGORY_KEYS, MAX_IMAGES, STATUS_LABEL, eur, sizesOf, stockOf, type Category, type Order, type OrderStatus, type Product, type Settings } from "@/lib/catalog";
+import { CATEGORIES, CATEGORY_KEYS, COMMISSION_LABEL, FINAL_STATUSES, MAX_IMAGES, STATUS_LABEL, eur, sizesOf, stockOf, type Category, type Commission, type Creator, type CreatorLink, type Order, type OrderStatus, type Product, type Settings } from "@/lib/catalog";
 import { uploadImage } from "@/lib/image-client";
 
-type Props = { products: Product[]; orders: Order[]; settings: Settings; subscribers: { email: string; createdAt: string }[] };
-type Tab = "products" | "orders" | "settings" | "subs";
+type Affiliate = { creators: Creator[]; links: CreatorLink[]; commissions: Commission[] };
+type Props = { products: Product[]; orders: Order[]; settings: Settings; subscribers: { email: string; createdAt: string }[]; affiliate: Affiliate };
+type Tab = "products" | "orders" | "creators" | "settings" | "subs";
 
 async function send(url: string, method: string, body?: unknown) {
   const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined }).catch(() => null);
@@ -15,7 +16,7 @@ async function send(url: string, method: string, body?: unknown) {
   return data;
 }
 
-export default function AdminDashboard({ products, orders, settings, subscribers }: Props) {
+export default function AdminDashboard({ products, orders, settings, subscribers, affiliate }: Props) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("products");
   const open = orders.filter((o) => o.status === "neu").length;
@@ -31,12 +32,13 @@ export default function AdminDashboard({ products, orders, settings, subscribers
           <button className="link" onClick={logout}>Abmelden</button>
         </div>
         <div className="tabs" role="tablist">
-          {([["products", "Produkte"], ["orders", `Bestellungen${open ? ` (${open})` : ""}`], ["settings", "Startseite & Drop"], ["subs", "Newsletter"]] as [Tab, string][]).map(([k, l]) => (
+          {([["products", "Produkte"], ["orders", `Bestellungen${open ? ` (${open})` : ""}`], ["creators", `Creators${affiliate.creators.length ? ` (${affiliate.creators.length})` : ""}`], ["settings", "Startseite & Drop"], ["subs", "Newsletter"]] as [Tab, string][]).map(([k, l]) => (
             <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{l}</button>
           ))}
         </div>
         {tab === "products" && <ProductsPanel products={products} onChange={() => router.refresh()} />}
-        {tab === "orders" && <OrdersPanel orders={orders} onChange={() => router.refresh()} />}
+        {tab === "orders" && <OrdersPanel orders={orders} affiliate={affiliate} onChange={() => router.refresh()} />}
+        {tab === "creators" && <CreatorsPanel affiliate={affiliate} holdDays={settings.commissionHoldDays} onChange={() => router.refresh()} />}
         {tab === "settings" && <SettingsPanel settings={settings} onChange={() => router.refresh()} />}
         {tab === "subs" && (
           <div className="table-wrap">
@@ -80,7 +82,7 @@ function PhotoSlot({ label, url, onChange, maxEdge, setMsg }: { label: string; u
 }
 
 type SizeRow = { key: number; name: string; stock: string };
-type Draft = { id: string | null; name: string; price: string; category: Category; sizes: SizeRow[]; color: string; description: string; isNew: boolean; images: string[] };
+type Draft = { id: string | null; name: string; price: string; commission: string; category: Category; sizes: SizeRow[]; color: string; description: string; isNew: boolean; images: string[] };
 let rowKey = 1;
 const row = (name: string, stock = "0"): SizeRow => ({ key: rowKey++, name, stock });
 const PRESETS: Record<string, string[]> = {
@@ -89,7 +91,7 @@ const PRESETS: Record<string, string[]> = {
   "One Size": ["One Size"],
   "Hosen 28–36": ["28", "30", "32", "34", "36"],
 };
-const emptyDraft = (): Draft => ({ id: null, name: "", price: "", category: "hoodie", sizes: PRESETS["S–XL"].map((n) => row(n)), color: "#2a2622", description: "", isNew: false, images: [] });
+const emptyDraft = (): Draft => ({ id: null, name: "", price: "", commission: "10", category: "hoodie", sizes: PRESETS["S–XL"].map((n) => row(n)), color: "#2a2622", description: "", isNew: false, images: [] });
 
 function PhotoManager({ images, onChange, setMsg }: { images: string[]; onChange: (imgs: string[]) => void; setMsg: (m: { ok: boolean; text: string } | null) => void }) {
   const [busy, setBusy] = useState(0);
@@ -194,7 +196,7 @@ function ProductsPanel({ products, onChange }: { products: Product[]; onChange: 
 
   function edit(p: Product) {
     setD({
-      id: p.id, name: p.name, price: (p.priceCents / 100).toFixed(2), category: p.category,
+      id: p.id, name: p.name, price: (p.priceCents / 100).toFixed(2), commission: String(p.commissionPercent), category: p.category,
       sizes: sizesOf(p).map((n) => row(n, String(stockOf(p, n)))),
       color: p.color, description: p.description, isNew: p.isNew, images: p.images,
     });
@@ -207,9 +209,11 @@ function ProductsPanel({ products, onChange }: { products: Product[]; onChange: 
     if (!sizes.length) return setMsg({ ok: false, text: "Lege mindestens eine Größe an, zum Beispiel „One Size“." });
     const price = Math.round(parseFloat(d.price.replace(",", ".")) * 100);
     if (!Number.isFinite(price)) return setMsg({ ok: false, text: "Bitte gib einen gültigen Preis ein." });
+    const commissionPercent = d.commission.trim() === "" ? 0 : Math.round(parseFloat(d.commission.replace(",", ".")) * 100) / 100;
+    if (!Number.isFinite(commissionPercent) || commissionPercent < 0 || commissionPercent > 90) return setMsg({ ok: false, text: "Die Provision muss zwischen 0 und 90 % liegen." });
     setBusy(true);
     setMsg(null);
-    const body = { name: d.name.trim(), priceCents: price, category: d.category, sizes, color: d.color, description: d.description.trim(), isNew: d.isNew, images: d.images };
+    const body = { name: d.name.trim(), priceCents: price, commissionPercent, category: d.category, sizes, color: d.color, description: d.description.trim(), isNew: d.isNew, images: d.images };
     try {
       if (d.id) await send(`/api/admin/products?id=${encodeURIComponent(d.id)}`, "PUT", body);
       else await send("/api/admin/products", "POST", body);
@@ -238,6 +242,16 @@ function ProductsPanel({ products, onChange }: { products: Product[]; onChange: 
           </select>
         </label>
         <label className="l">Farbe der Platzhalter-Grafik<input className="field" type="color" value={d.color} onChange={(e) => set("color", e.target.value)} style={{ height: 46, padding: 4 }} /></label>
+        <label className="l">Provision für Creator (%)
+          <input className="field" inputMode="decimal" value={d.commission} onChange={(e) => set("commission", e.target.value)} placeholder="0 = keine Provisionslinks" />
+          <span className="small">
+            {(() => {
+              const pct = parseFloat(d.commission.replace(",", ".")) || 0;
+              const price = parseFloat(d.price.replace(",", ".")) || 0;
+              return pct > 0 ? `Pro verkauftem Stück ${eur(Math.round(price * pct))} Provision. Käufer erhalten einen Link.` : "0 % = Käufer erhalten keinen Provisionslink.";
+            })()}
+          </span>
+        </label>
         <div className="full">
           <div className="l" style={{ marginBottom: 8 }}>Größen und Bestand</div>
           <SizeEditor sizes={d.sizes} onChange={(rows) => set("sizes", rows)} />
@@ -261,7 +275,7 @@ function ProductsPanel({ products, onChange }: { products: Product[]; onChange: 
           <tbody>
             {products.length ? products.map((p) => (
               <tr key={p.id}>
-                <td>{p.name}{p.isNew ? <> <span className="status">Neu</span></> : null}<div className="small">{p.images.length ? `${p.images.length} ${p.images.length === 1 ? "Foto" : "Fotos"}` : "ohne Foto"}</div></td>
+                <td>{p.name}{p.isNew ? <> <span className="status">Neu</span></> : null}<div className="small">{p.images.length ? `${p.images.length} ${p.images.length === 1 ? "Foto" : "Fotos"}` : "ohne Foto"} · {p.commissionPercent > 0 ? `${p.commissionPercent.toLocaleString("de-DE")} % Provision` : "keine Provision"}</div></td>
                 <td>{CATEGORIES[p.category].label}</td>
                 <td>{eur(p.priceCents)}</td>
                 <td className="stocklist">
@@ -280,10 +294,15 @@ function ProductsPanel({ products, onChange }: { products: Product[]; onChange: 
   );
 }
 
-function OrdersPanel({ orders, onChange }: { orders: Order[]; onChange: () => void }) {
+function OrdersPanel({ orders, affiliate, onChange }: { orders: Order[]; affiliate: Affiliate; onChange: () => void }) {
+  const creatorOf = (code: string | null) => {
+    const link = code ? affiliate.links.find((l) => l.code === code) : null;
+    return link ? affiliate.creators.find((c) => c.id === link.creatorId) ?? null : null;
+  };
   const [err, setErr] = useState("");
   async function setStatus(o: Order, status: OrderStatus) {
-    if (status === "storniert" && !confirm(`Bestellung ${o.id} stornieren? Die Artikel gehen zurück ins Lager. Das lässt sich nicht rückgängig machen.`)) return;
+    if (status === "storniert" && !confirm(`Bestellung ${o.id} stornieren? Die Artikel gehen zurück ins Lager, eine Provision verfällt. Das lässt sich nicht rückgängig machen.`)) return;
+    if (status === "retourniert" && !confirm(`Bestellung ${o.id} als retourniert markieren? Die Artikel gehen zurück ins Lager, eine Provision verfällt. Das lässt sich nicht rückgängig machen.`)) return;
     try { await send(`/api/admin/orders?id=${encodeURIComponent(o.id)}`, "PATCH", { status }); setErr(""); onChange(); }
     catch (e: any) { setErr(e.message); }
   }
@@ -295,7 +314,7 @@ function OrdersPanel({ orders, onChange }: { orders: Order[]; onChange: () => vo
         <div className="order" key={o.id}>
           <div className="top">
             <div>Nr. {o.id} <span className="small">{new Date(o.createdAt).toLocaleString("de-DE")}</span></div>
-            <select className="field" style={{ width: "auto", padding: "6px 10px" }} aria-label="Status" value={o.status} disabled={o.status === "storniert"} onChange={(e) => setStatus(o, e.target.value as OrderStatus)}>
+            <select className="field" style={{ width: "auto", padding: "6px 10px" }} aria-label="Status" value={o.status} disabled={FINAL_STATUSES.includes(o.status)} onChange={(e) => setStatus(o, e.target.value as OrderStatus)}>
               {(Object.keys(STATUS_LABEL) as OrderStatus[]).map((k) => <option key={k} value={k}>{STATUS_LABEL[k]}</option>)}
             </select>
           </div>
@@ -303,6 +322,8 @@ function OrdersPanel({ orders, onChange }: { orders: Order[]; onChange: () => vo
             <div>
               {o.items.map((i, n) => <div key={n}>{i.qty} × {i.name}, {i.size} ({eur(i.priceCents * i.qty)})</div>)}
               <div style={{ marginTop: 6, fontWeight: 500 }}>{eur(o.totalCents)}</div>
+              {o.refCode ? <div className="small" style={{ marginTop: 6 }}>Über Creator-Link von {creatorOf(o.refCode)?.name ?? o.refCode}</div> : null}
+              {o.shippedAt ? <div className="small">Versendet am {new Date(o.shippedAt).toLocaleDateString("de-DE")}</div> : null}
             </div>
             <div>
               {o.customer.name}<br />{o.customer.street}<br />{o.customer.zip} {o.customer.city}<br />
@@ -325,6 +346,7 @@ function SettingsPanel({ settings, onChange }: { settings: Settings; onChange: (
   const [s, setS] = useState({ ...settings, dropLocal: toLocalInput(settings.dropAt) });
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const set = (k: keyof typeof s, v: string | null) => setS((x) => ({ ...x, [k]: v }));
+
   async function save(e: React.FormEvent) {
     e.preventDefault();
     const { dropLocal, ...rest } = s;
@@ -345,8 +367,118 @@ function SettingsPanel({ settings, onChange }: { settings: Settings; onChange: (
       <label className="l">Start des Drops<input className="field" type="datetime-local" value={s.dropLocal} onChange={(e) => set("dropLocal", e.target.value)} /></label>
       <label className="l full">Text zum Drop<input className="field" value={s.dropText} onChange={(e) => set("dropText", e.target.value)} /></label>
       <label className="l full">Leiste ganz oben (leer lassen zum Ausblenden)<input className="field" value={s.banner} onChange={(e) => set("banner", e.target.value)} /></label>
+      <label className="l">Provision freigeben nach (Tage ab Versand)
+        <input className="field" type="number" min={0} max={365} value={s.commissionHoldDays} onChange={(e) => setS((x) => ({ ...x, commissionHoldDays: Math.max(0, parseInt(e.target.value, 10) || 0) }))} />
+        <span className="small">Rückgabefrist plus Puffer für den Rückversand, z. B. 14 + 7 = 21.</span>
+      </label>
+      <label className="l">Link-Klick zählt für Käufe innerhalb von (Tagen)
+        <input className="field" type="number" min={1} max={365} value={s.refCookieDays} onChange={(e) => setS((x) => ({ ...x, refCookieDays: Math.max(1, parseInt(e.target.value, 10) || 1) }))} />
+      </label>
       <label className="l full">Versand &amp; Rückgabe (erscheint auf jeder Produktseite)<textarea className="field" rows={3} value={s.shippingText} onChange={(e) => set("shippingText", e.target.value)} /></label>
       <div className="full"><button className="btn">Einstellungen speichern</button><div className={`msg ${msg ? (msg.ok ? "ok" : "err") : ""}`}>{msg?.text}</div></div>
     </form>
+  );
+}
+
+type CreatorSort = "new" | "links" | "clicks" | "sales" | "commission";
+
+function CreatorsPanel({ affiliate, holdDays, onChange }: { affiliate: Affiliate; holdDays: number; onChange: () => void }) {
+  const [sort, setSort] = useState<CreatorSort>("new");
+  const [open, setOpen] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+  const total = (k: "pendingCents" | "releasedCents" | "paidCents") => affiliate.creators.reduce((a, c) => a + c[k], 0);
+  const earned = (c: Creator) => c.pendingCents + c.releasedCents + c.paidCents;
+  const list = affiliate.creators.slice().sort((a, b) =>
+    sort === "links" ? b.links - a.links :
+    sort === "clicks" ? b.clicks - a.clicks :
+    sort === "sales" ? b.sales - a.sales :
+    sort === "commission" ? earned(b) - earned(a) :
+    b.createdAt.localeCompare(a.createdAt));
+
+  async function patch(c: Creator, body: unknown, confirmText?: string) {
+    if (confirmText && !confirm(confirmText)) return;
+    try { await send(`/api/admin/creators?id=${encodeURIComponent(c.id)}`, "PATCH", body); setErr(""); onChange(); }
+    catch (e: any) { setErr(e.message); }
+  }
+
+  return (
+    <>
+      <div className="kpis">
+        <div><b>{affiliate.creators.length}</b><span>Creators</span></div>
+        <div><b>{affiliate.creators.reduce((a, c) => a + c.clicks, 0)}</b><span>Klicks</span></div>
+        <div><b>{eur(total("pendingCents"))}</b><span>Vorgemerkt</span></div>
+        <div><b>{eur(total("releasedCents"))}</b><span>Zur Auszahlung frei</span></div>
+        <div><b>{eur(total("paidCents"))}</b><span>Ausgezahlt</span></div>
+      </div>
+      <p className="small" style={{ marginTop: 12 }}>
+        Provisionen sind vorgemerkt, bis die Bestellung als versendet markiert ist und danach {holdDays} Tage vergangen sind. Stornierte und retournierte Bestellungen erhalten keine Provision.
+      </p>
+      <div className="chiprow">
+        {([["new", "Neueste"], ["links", "Meiste Links"], ["clicks", "Meiste Klicks"], ["sales", "Meiste Käufe"], ["commission", "Höchste Provision"]] as [CreatorSort, string][]).map(([k, l]) => (
+          <button key={k} type="button" aria-pressed={sort === k} onClick={() => setSort(k)}>{l}</button>
+        ))}
+      </div>
+      <div className="msg err">{err}</div>
+      {!list.length ? <p className="small">Noch keine Creators. Sobald jemand ein Produkt mit Provision kauft, erscheint er hier.</p> : null}
+      {list.map((c) => {
+        const links = affiliate.links.filter((l) => l.creatorId === c.id);
+        const comms = affiliate.commissions.filter((x) => x.creatorId === c.id);
+        return (
+          <div className="creator" key={c.id}>
+            <div className="head">
+              <div>
+                <div style={{ fontSize: 17 }}>{c.name}<span className={`pill ${c.active ? "on" : "off"}`}>{c.active ? "Aktiv" : "Deaktiviert"}</span></div>
+                <div className="small">{c.email}</div>
+                <div className="small">Seit {new Date(c.createdAt).toLocaleDateString("de-DE")}</div>
+              </div>
+              <div className="stats">
+                <div><b>{c.links}</b><span>Links</span></div>
+                <div><b>{c.clicks}</b><span>Klicks</span></div>
+                <div><b>{c.sales}</b><span>Käufe</span></div>
+                <div><b>{eur(earned(c))}</b><span>Provision</span></div>
+              </div>
+            </div>
+            <div className="row-actions" style={{ marginTop: 14 }}>
+              <button className="btn ghost" type="button" onClick={() => setOpen(open === c.id ? null : c.id)}>{open === c.id ? "Details schließen" : "Details ansehen"}</button>
+              <button className="btn ghost" type="button" onClick={() => patch(c, { active: !c.active }, c.active ? `${c.name} deaktivieren? Neue Käufe über die Links bringen dann keine Provision mehr.` : undefined)}>{c.active ? "Deaktivieren" : "Aktivieren"}</button>
+              {c.releasedCents > 0 ? (
+                <button className="btn" type="button" onClick={() => patch(c, { action: "markPaid" }, `${eur(c.releasedCents)} an ${c.name} als ausgezahlt markieren? Überweise den Betrag vorher an: ${c.payout || "(keine Auszahlungsdaten hinterlegt)"}`)}>
+                  {eur(c.releasedCents)} als ausgezahlt markieren
+                </button>
+              ) : null}
+            </div>
+            {open === c.id ? (
+              <div className="details">
+                <div className="small">Auszahlung an: <b style={{ color: "var(--ink)", fontWeight: 400 }}>{c.payout || "noch nicht hinterlegt"}</b></div>
+                <div className="kpis">
+                  <div><b>{eur(c.pendingCents)}</b><span>Vorgemerkt</span></div>
+                  <div><b>{eur(c.releasedCents)}</b><span>Zur Auszahlung frei</span></div>
+                  <div><b>{eur(c.paidCents)}</b><span>Ausgezahlt</span></div>
+                </div>
+                <div className="table-wrap">
+                  <table>
+                    <thead><tr><th>Link</th><th>Produkt</th><th>Klicks</th><th>Käufe</th><th>Provision</th></tr></thead>
+                    <tbody>{links.map((l) => <tr key={l.code}><td>/r/{l.code}</td><td>{l.productName}</td><td>{l.clicks}</td><td>{l.sales}</td><td>{eur(l.earnedCents)}</td></tr>)}</tbody>
+                  </table>
+                </div>
+                {comms.length ? (
+                  <div className="table-wrap">
+                    <table>
+                      <thead><tr><th>Datum</th><th>Bestellung</th><th>Produkt</th><th>Betrag</th><th>Status</th></tr></thead>
+                      <tbody>{comms.map((x) => (
+                        <tr key={x.id}>
+                          <td>{new Date(x.createdAt).toLocaleDateString("de-DE")}</td><td>{x.orderId}</td><td>{x.productName}</td><td>{eur(x.amountCents)}</td>
+                          <td>{COMMISSION_LABEL[x.status]}{x.status === "vorgemerkt" && x.releaseAt ? <span className="small"> (ab {new Date(x.releaseAt).toLocaleDateString("de-DE")})</span> : null}</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                ) : <p className="small">Noch keine Verkäufe über diese Links.</p>}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </>
   );
 }

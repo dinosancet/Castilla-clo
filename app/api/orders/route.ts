@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { sql } from "@/lib/db";
 import { toProduct } from "@/lib/data";
 import { ready } from "@/lib/migrate";
+import { getOrder, getSettings } from "@/lib/data";
+import { afterOrder } from "@/lib/affiliate";
+import { sendOrderConfirmation } from "@/lib/mail";
+import { REF_COOKIE } from "@/lib/site";
 import { sizesOf, stockOf, type OrderItem } from "@/lib/catalog";
 
 const OrderInput = z.object({
@@ -98,6 +103,16 @@ export async function POST(req: Request) {
     }
     console.error("order failed", err);
     return NextResponse.json({ error: "Die Bestellung konnte nicht gespeichert werden. Versuche es gleich noch einmal." }, { status: 500 });
+  }
+
+  // Commission links and confirmation e-mail. A failure here must not fail the order itself.
+  try {
+    const ref = (await cookies()).get(REF_COOKIE)?.value ?? null;
+    const { token, links } = await afterOrder(id, orderItems, customer, ref);
+    const [order, settings] = await Promise.all([getOrder(id), getSettings()]);
+    if (order) await sendOrderConfirmation(order, links, token, settings.commissionHoldDays);
+  } catch (err) {
+    console.error("after-order steps failed", err);
   }
 
   return NextResponse.json({ id });

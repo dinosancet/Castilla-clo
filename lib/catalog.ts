@@ -27,6 +27,8 @@ export type Product = {
   color: string;
   description: string;
   isNew: boolean;
+  /** Commission for creators in percent of the item price (0 = no links). */
+  commissionPercent: number;
   /** All photos in display order. */
   images: string[];
   /** Shortcuts: first and second photo. */
@@ -43,6 +45,10 @@ export type Settings = {
   dropText: string;
   dropAt: string | null;
   shippingText: string;
+  /** Days after shipping until a commission is released (covers the return period). */
+  commissionHoldDays: number;
+  /** How long a click on a creator link counts for a purchase. */
+  refCookieDays: number;
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -53,14 +59,18 @@ export const DEFAULT_SETTINGS: Settings = {
   dropText: "",
   dropAt: null,
   shippingText: "Versand innerhalb Deutschlands in 2–4 Werktagen.\nRückgabe innerhalb von 14 Tagen nach Erhalt.",
+  commissionHoldDays: 21,
+  refCookieDays: 30,
 };
 
-export type OrderStatus = "neu" | "bezahlt" | "versendet" | "storniert";
+export type OrderStatus = "neu" | "bezahlt" | "versendet" | "storniert" | "retourniert";
+export const FINAL_STATUSES: OrderStatus[] = ["storniert", "retourniert"];
 export const STATUS_LABEL: Record<OrderStatus, string> = {
   neu: "Eingegangen",
   bezahlt: "Bezahlt",
   versendet: "Versendet",
   storniert: "Storniert",
+  retourniert: "Retourniert",
 };
 
 export type OrderItem = { productId: string; name: string; size: string; qty: number; priceCents: number };
@@ -72,6 +82,26 @@ export type Order = {
   items: OrderItem[];
   totalCents: number;
   customer: Customer;
+  shippedAt: string | null;
+  refCode: string | null;
+};
+
+export type CommissionStatus = "vorgemerkt" | "freigegeben" | "ausgezahlt" | "storniert";
+export const COMMISSION_LABEL: Record<CommissionStatus, string> = {
+  vorgemerkt: "Vorgemerkt",
+  freigegeben: "Zur Auszahlung frei",
+  ausgezahlt: "Ausgezahlt",
+  storniert: "Storniert",
+};
+export type Commission = {
+  id: string; orderId: string; creatorId: string; code: string; productName: string;
+  amountCents: number; status: CommissionStatus; createdAt: string; releaseAt: string | null;
+};
+export type CreatorLink = { code: string; creatorId: string; productId: string; productName: string; clicks: number; sales: number; earnedCents: number };
+export type Creator = {
+  id: string; email: string; name: string; token: string; active: boolean; payout: string; createdAt: string;
+  links: number; clicks: number; sales: number;
+  pendingCents: number; releasedCents: number; paidCents: number;
 };
 
 export const sizesOf = (p: Pick<Product, "sizes">) => (p.sizes.length ? p.sizes : ["One Size"]);
