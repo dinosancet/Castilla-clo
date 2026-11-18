@@ -3,13 +3,13 @@
 import Link from "next/link";
 import { useEffect } from "react";
 import { usePathname } from "next/navigation";
-import { eur } from "@/lib/catalog";
+import { eur, taxNote } from "@/lib/catalog";
 import { useCart } from "./Cart";
 import GarmentArt from "./GarmentArt";
 import { CloseIcon } from "./Icons";
 
 export default function CartDrawer() {
-  const { lines, totalCents, open, setOpen, setQty, remove } = useCart();
+  const { lines, totalCents, shippingCents, terms, open, setOpen, setQty, remove } = useCart();
   const path = usePathname();
   useEffect(() => setOpen(false), [path, setOpen]);
   useEffect(() => {
@@ -56,7 +56,9 @@ export default function CartDrawer() {
         {lines.length ? (
           <div className="pfoot">
             <div className="sum"><span>Zwischensumme</span><span>{eur(totalCents)}</span></div>
-            <div className="small" style={{ marginBottom: 14 }}>inkl. MwSt., zzgl. Versand</div>
+            <div className="sum small"><span>Versand (Deutschland)</span><span>{shippingCents ? eur(shippingCents) : "kostenlos"}</span></div>
+            <div className="sum" style={{ fontWeight: 500 }}><span>Gesamt</span><span>{eur(totalCents + shippingCents)}</span></div>
+            <div className="small" style={{ marginBottom: 14 }}>{taxNote(terms)}</div>
             <Link className="btn block" href="/kasse">Zur Kasse</Link>
           </div>
         ) : null}

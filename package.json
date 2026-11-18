@@ -9,6 +9,8 @@
     "db:setup": "node scripts/setup-db.mjs"
   },
   "dependencies": {
+    "@fontsource/cinzel": "5.3.0",
+    "@fontsource/jost": "5.3.0",
     "@vercel/blob": "2.8.2",
     "jose": "5.9.6",
     "next": "15.5.28",

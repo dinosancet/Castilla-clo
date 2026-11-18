@@ -9,7 +9,7 @@ import { getOrder, getSettings } from "@/lib/data";
 import { afterOrder } from "@/lib/affiliate";
 import { sendOrderConfirmation } from "@/lib/mail";
 import { REF_COOKIE } from "@/lib/site";
-import { sizesOf, stockOf, type OrderItem } from "@/lib/catalog";
+import { shippingFor, sizesOf, stockOf, type OrderItem } from "@/lib/catalog";
 
 const OrderInput = z.object({
   items: z
@@ -63,7 +63,9 @@ export async function POST(req: Request) {
   }
 
   const id = orderId();
-  const total = orderItems.reduce((sum, i) => sum + i.qty * i.priceCents, 0);
+  const subtotal = orderItems.reduce((sum, i) => sum + i.qty * i.priceCents, 0);
+  const shipping = shippingFor(subtotal, await getSettings());
+  const total = subtotal + shipping;
   const db = sql();
   const agg = db.json([...perSize.values()].map((x) => ({ product_id: x.productId, size: x.size, qty: x.qty })));
 
@@ -94,8 +96,8 @@ export async function POST(req: Request) {
       chk AS MATERIALIZED (
         SELECT 1 / (CASE WHEN (SELECT count(*) FROM upd) = (SELECT count(*) FROM per) THEN 1 ELSE 0 END) AS ok
       )
-      INSERT INTO orders (id, status, items, total_cents, customer)
-      SELECT ${id}, 'neu', ${db.json(orderItems as any)}, ${total}, ${db.json(customer)} FROM chk WHERE chk.ok = 1
+      INSERT INTO orders (id, status, items, total_cents, shipping_cents, customer)
+      SELECT ${id}, 'neu', ${db.json(orderItems as any)}, ${total}, ${shipping}, ${db.json(customer)} FROM chk WHERE chk.ok = 1
     `;
   } catch (err: any) {
     if (err?.code === "22012") {
@@ -110,7 +112,7 @@ export async function POST(req: Request) {
     const ref = (await cookies()).get(REF_COOKIE)?.value ?? null;
     const { token, links } = await afterOrder(id, orderItems, customer, ref);
     const [order, settings] = await Promise.all([getOrder(id), getSettings()]);
-    if (order) await sendOrderConfirmation(order, links, token, settings.commissionHoldDays);
+    if (order) await sendOrderConfirmation(order, links, token, settings);
   } catch (err) {
     console.error("after-order steps failed", err);
   }

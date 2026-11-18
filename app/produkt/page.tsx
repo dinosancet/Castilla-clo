@@ -3,7 +3,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { getProduct, getProducts, getSettings } from "@/lib/data";
-import { CATEGORIES, eur, sortRecommended } from "@/lib/catalog";
+import { CATEGORIES, eur, sortRecommended, taxNote } from "@/lib/catalog";
+import { seller } from "@/lib/legal";
 import AddToCart from "@/components/AddToCart";
 import GarmentArt from "@/components/GarmentArt";
 import ProductTile from "@/components/ProductTile";
@@ -47,11 +48,18 @@ export default async function ProductPage({ searchParams }: Props) {
         <div className="buy">
           <h1>{p.name}</h1>
           <div className="price">{eur(p.priceCents)}</div>
-          <div className="tax">inkl. MwSt., zzgl. Versand</div>
+          <div className="tax">{taxNote(s)}, zzgl. <Link className="textlink" style={{ textTransform: "none", letterSpacing: 0, fontSize: "inherit" }} href="/versand">Versandkosten</Link></div>
           <AddToCart p={p} />
           <div className="mt">
             <details open><summary>Beschreibung</summary><p>{p.description || "Keine Beschreibung vorhanden."}</p></details>
+            <details open><summary>Material &amp; Pflege</summary><p>{p.material ? `Material: ${p.material}` : "Materialangabe folgt."}{p.care ? `\n${p.care}` : ""}</p></details>
             <details><summary>Versand &amp; Rückgabe</summary><p>{s.shippingText}</p></details>
+          </div>
+          <div className="gpsr">
+            <b>Hersteller</b><br />
+            {seller(s).lines.join(", ")}<br />
+            {s.legalEmail}<br />
+            Artikelnummer: {p.id}
           </div>
         </div>
       </div>

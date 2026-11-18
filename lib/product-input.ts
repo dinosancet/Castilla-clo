@@ -14,6 +14,8 @@ export const ProductInput = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   description: z.string().max(4000),
   isNew: z.boolean(),
+  material: z.string().trim().max(300).default(""),
+  care: z.string().trim().max(1000).default(""),
   commissionPercent: z.number().min(0).max(90),
   images: z.array(z.string().url()).max(MAX_IMAGES),
 });

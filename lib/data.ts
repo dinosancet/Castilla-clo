@@ -1,7 +1,7 @@
 import "server-only";
 import { sql, type Row } from "./db";
 import { ready } from "./migrate";
-import { DEFAULT_SETTINGS, type Order, type Product, type Settings } from "./catalog";
+import { DEFAULT_SETTINGS, type Order, type Product, type Settings, type Withdrawal } from "./catalog";
 
 export function toProduct(r: Row): Product {
   const sizeStock: Record<string, number> = {};
@@ -19,6 +19,8 @@ export function toProduct(r: Row): Product {
     description: r.description ?? "",
     isNew: !!r.is_new,
     commissionPercent: Number(r.commission_percent ?? 0),
+    material: r.material ?? "",
+    care: r.care ?? "",
     images,
     imageUrl: images[0] ?? null,
     imageUrl2: images[1] ?? null,
@@ -36,6 +38,7 @@ export function toOrder(r: Row): Order {
     customer: r.customer,
     shippedAt: r.shipped_at ? new Date(r.shipped_at).toISOString() : null,
     refCode: r.ref_code ?? null,
+    shippingCents: Number(r.shipping_cents ?? 0),
   };
 }
 
@@ -69,8 +72,17 @@ export async function getOrder(id: string): Promise<Order | null> {
   return rows[0] ? toOrder(rows[0]) : null;
 }
 
-export async function getSubscribers(): Promise<{ email: string; createdAt: string }[]> {
+export async function getSubscribers(): Promise<{ email: string; createdAt: string; confirmed: boolean }[]> {
   await ready();
-  const rows = await sql()`SELECT email, created_at FROM newsletter ORDER BY created_at DESC`;
-  return rows.map((r) => ({ email: r.email, createdAt: new Date(r.created_at).toISOString() }));
+  const rows = await sql()`SELECT email, created_at, confirmed_at FROM newsletter ORDER BY created_at DESC`;
+  return rows.map((r) => ({ email: r.email, createdAt: new Date(r.created_at).toISOString(), confirmed: !!r.confirmed_at }));
+}
+
+export async function getWithdrawals(): Promise<Withdrawal[]> {
+  await ready();
+  const rows = await sql()`SELECT * FROM withdrawals ORDER BY created_at DESC LIMIT 500`;
+  return rows.map((r) => ({
+    id: r.id, createdAt: new Date(r.created_at).toISOString(), name: r.name, email: r.email,
+    orderRef: r.order_ref, orderId: r.order_id ?? null, items: r.items, handled: !!r.handled_at,
+  }));
 }

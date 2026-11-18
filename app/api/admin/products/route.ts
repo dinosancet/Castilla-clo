@@ -34,9 +34,9 @@ export async function POST(req: Request) {
   const db = sql();
   const id = slugify(p.name);
   await db`
-    INSERT INTO products (id, name, price_cents, category, sizes, size_stock, stock, color, description, is_new, commission_percent, images, image_url, image_url2)
+    INSERT INTO products (id, name, price_cents, category, sizes, size_stock, stock, color, description, is_new, commission_percent, material, care, images, image_url, image_url2)
     VALUES (${id}, ${p.name}, ${p.priceCents}, ${p.category}, ${c.sizes}, ${db.json(c.sizeStock)}, ${c.stock}, ${p.color},
-            ${p.description}, ${p.isNew}, ${p.commissionPercent}, ${p.images}, ${c.imageUrl}, ${c.imageUrl2})`;
+            ${p.description}, ${p.isNew}, ${p.commissionPercent}, ${p.material}, ${p.care}, ${p.images}, ${c.imageUrl}, ${c.imageUrl2})`;
   return NextResponse.json({ id });
 }
 
@@ -54,7 +54,7 @@ export async function PUT(req: Request) {
   const rows = await db`
     UPDATE products SET name = ${p.name}, price_cents = ${p.priceCents}, category = ${p.category}, sizes = ${c.sizes},
       size_stock = ${db.json(c.sizeStock)}, stock = ${c.stock}, color = ${p.color}, description = ${p.description},
-      is_new = ${p.isNew}, commission_percent = ${p.commissionPercent}, images = ${p.images}, image_url = ${c.imageUrl}, image_url2 = ${c.imageUrl2}, updated_at = now()
+      is_new = ${p.isNew}, commission_percent = ${p.commissionPercent}, material = ${p.material}, care = ${p.care}, images = ${p.images}, image_url = ${c.imageUrl}, image_url2 = ${c.imageUrl2}, updated_at = now()
     WHERE id = ${id} RETURNING id`;
   if (!rows.length) return NextResponse.json({ error: "Produkt nicht gefunden." }, { status: 404 });
   return NextResponse.json({ id });

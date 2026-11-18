@@ -171,7 +171,7 @@ details p{margin:0 0 18px;color:var(--muted);white-space:pre-line}
 
 /* Footer */
 footer.site{margin-top:clamp(80px,10vw,140px);background:#1C1915;color:#E9E2D6;padding:clamp(48px,6vw,80px) 0 calc(28px + env(safe-area-inset-bottom,0px))}
-.fgrid{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:32px}
+.fgrid{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:32px}
 .fgrid img{width:110px;margin-bottom:16px}
 .fgrid .wm{font-family:var(--serif);letter-spacing:.38em;font-size:20px}
 .fgrid h4{font-size:12px;letter-spacing:.2em;text-transform:uppercase;font-weight:500;margin:0 0 14px;color:#A39A8D}
@@ -294,3 +294,20 @@ th{font-size:12px;color:var(--muted);font-weight:500;letter-spacing:.06em;text-t
 .pill.on{color:var(--ok);border-color:currentColor}
 .pill.off{color:var(--danger);border-color:currentColor}
 .creator .details{margin-top:16px;border-top:1px solid var(--line);padding-top:16px;display:grid;gap:16px}
+/* Customer account */
+.acc-title{font-family:var(--serif);font-weight:400;font-size:clamp(28px,3.4vw,40px);letter-spacing:.1em;margin:0 0 4px}
+.codefield{font-size:26px;letter-spacing:.4em;text-align:center;font-family:Menlo,Consolas,monospace}
+/* Legal pages */
+.legal h1{margin-bottom:24px}
+.legal-text h2{font-size:17px;font-weight:500;margin:30px 0 8px;letter-spacing:.02em}
+.legal-text h3{font-size:15px;font-weight:500;margin:20px 0 6px}
+.legal-text p,.legal-text li{font-size:15px;line-height:1.65;margin:0 0 12px}
+.legal-text ul{padding-left:20px;margin:0 0 12px}
+.legal-nav{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:48px;padding-top:20px;border-top:1px solid var(--line);font-size:13px}
+.legal-nav a{text-decoration:underline;text-underline-offset:3px;color:var(--muted)}
+.fine{font-size:12px;color:var(--muted);line-height:1.55}
+.fine a{text-decoration:underline;text-underline-offset:2px}
+.fgrid .revoke-btn{display:inline-block;border:1px solid #E9E2D6;padding:9px 16px;color:#E9E2D6;padding:9px 16px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;margin-top:8px}
+.fgrid .revoke-btn:hover{background:#E9E2D6;color:#1C1915}
+.gpsr{margin-top:22px;font-size:13px;color:var(--muted);line-height:1.6;border-top:1px solid var(--line);padding-top:16px}
+.gpsr b{color:var(--ink);font-weight:500}

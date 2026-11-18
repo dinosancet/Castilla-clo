@@ -1,6 +1,8 @@
 "use client";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import type { Category } from "@/lib/catalog";
+import { shippingFor, type Category, type Settings } from "@/lib/catalog";
+
+export type ShopTerms = Pick<Settings, "shippingCents" | "freeShippingFromCents" | "smallBusiness">;
 
 export type CartLine = {
   id: string;
@@ -17,7 +19,10 @@ export type CartLine = {
 type Ctx = {
   lines: CartLine[];
   count: number;
+  /** Sum of the items. */
   totalCents: number;
+  shippingCents: number;
+  terms: ShopTerms;
   add: (l: Omit<CartLine, "qty">) => void;
   setQty: (id: string, size: string, qty: number) => void;
   remove: (id: string, size: string) => void;
@@ -29,7 +34,7 @@ type Ctx = {
 const CartContext = createContext<Ctx | null>(null);
 const KEY = "castilla-cart-v1";
 
-export function CartProvider({ children }: { children: React.ReactNode }) {
+export function CartProvider({ children, terms }: { children: React.ReactNode; terms: ShopTerms }) {
   const [lines, setLines] = useState<CartLine[]>([]);
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
@@ -67,9 +72,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       lines,
       count: lines.reduce((a, l) => a + l.qty, 0),
       totalCents: lines.reduce((a, l) => a + l.qty * l.priceCents, 0),
+      shippingCents: shippingFor(lines.reduce((a, l) => a + l.qty * l.priceCents, 0), terms),
+      terms,
       add, setQty, remove, clear, open, setOpen,
     }),
-    [lines, add, setQty, remove, clear, open],
+    [lines, add, setQty, remove, clear, open, terms],
   );
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }

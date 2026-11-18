@@ -14,6 +14,18 @@ const SettingsInput = z.object({
   shippingText: z.string().max(2000),
   commissionHoldDays: z.number().int().min(0).max(365),
   refCookieDays: z.number().int().min(1).max(365),
+  legalOwner: z.string().trim().max(120),
+  legalBusiness: z.string().trim().max(120),
+  legalStreet: z.string().trim().max(160),
+  legalZipCity: z.string().trim().max(120),
+  legalEmail: z.string().trim().max(160),
+  legalPhone: z.string().trim().max(60),
+  vatId: z.string().trim().max(30),
+  smallBusiness: z.boolean(),
+  shippingCents: z.number().int().min(0).max(100000),
+  freeShippingFromCents: z.number().int().min(0).max(10000000),
+  bankDetails: z.string().max(500),
+  legalOverrides: z.partialRecord(z.enum(["impressum", "datenschutz", "agb", "widerruf", "versand", "partnerbedingungen"]), z.string().max(60000)),
 });
 
 export async function PUT(req: Request) {

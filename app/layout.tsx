@@ -1,4 +1,9 @@
 import type { Metadata, Viewport } from "next";
+import "@fontsource/cinzel/400.css";
+import "@fontsource/cinzel/500.css";
+import "@fontsource/jost/300.css";
+import "@fontsource/jost/400.css";
+import "@fontsource/jost/500.css";
 import "./globals.css";
 import { getProducts, getSettings } from "@/lib/data";
 import { CartProvider } from "@/components/Cart";
@@ -24,14 +29,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const [products, settings] = await Promise.all([getProducts(), getSettings()]);
   return (
     <html lang="de">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-        <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500&family=Jost:wght@300;400;500&display=swap" rel="stylesheet" />
-      </head>
       <body>
-        <CartProvider>
+        <CartProvider terms={{ shippingCents: settings.shippingCents, freeShippingFromCents: settings.freeShippingFromCents, smallBusiness: settings.smallBusiness }}>
           {settings.banner ? <div className="announce">{settings.banner}</div> : null}
           <Header products={products} />
           {children}

@@ -1,6 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
-import { CATEGORIES, CATEGORY_KEYS } from "@/lib/catalog";
+import { CATEGORIES, CATEGORY_KEYS, LEGAL_PAGES } from "@/lib/catalog";
 
 export default function Footer() {
   return (
@@ -21,8 +21,14 @@ export default function Footer() {
           </div>
           <div>
             <h4>Service</h4>
+            <Link href="/konto">Mein Konto &amp; Provision</Link>
             <Link href="/kasse">Warenkorb &amp; Kasse</Link>
             <Link href="/admin">Verwaltung</Link>
+          </div>
+          <div>
+            <h4>Rechtliches</h4>
+            {LEGAL_PAGES.map((p) => <Link key={p.key} href={p.href}>{p.label}</Link>)}
+            <Link href="/widerrufen" className="revoke-btn">Vertrag widerrufen</Link>
           </div>
         </div>
         <div className="legal">© {new Date().getFullYear()} CASTILLA</div>

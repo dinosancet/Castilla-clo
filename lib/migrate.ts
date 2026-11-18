@@ -79,6 +79,37 @@ ALTER TABLE creators ENABLE ROW LEVEL SECURITY;
 ALTER TABLE affiliate_links ENABLE ROW LEVEL SECURITY;
 ALTER TABLE link_clicks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE commissions ENABLE ROW LEVEL SECURITY;
+
+-- v4: customer accounts (passwordless login by e-mail code)
+CREATE TABLE IF NOT EXISTS customers (
+  id text PRIMARY KEY, email text NOT NULL UNIQUE, name text NOT NULL DEFAULT '',
+  street text NOT NULL DEFAULT '', zip text NOT NULL DEFAULT '', city text NOT NULL DEFAULT '',
+  created_at timestamptz NOT NULL DEFAULT now(), last_login_at timestamptz
+);
+CREATE TABLE IF NOT EXISTS login_codes (
+  id text PRIMARY KEY, email text NOT NULL, code_hash text NOT NULL,
+  expires_at timestamptz NOT NULL, attempts integer NOT NULL DEFAULT 0, created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS login_codes_email_idx ON login_codes (email, created_at DESC);
+CREATE INDEX IF NOT EXISTS orders_email_idx ON orders (lower(customer->>'email'));
+ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE login_codes ENABLE ROW LEVEL SECURITY;
+
+-- v5: legal requirements
+ALTER TABLE products ADD COLUMN IF NOT EXISTS material text NOT NULL DEFAULT '';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS care text NOT NULL DEFAULT '';
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_cents integer NOT NULL DEFAULT 0;
+ALTER TABLE newsletter ADD COLUMN IF NOT EXISTS token text;
+ALTER TABLE newsletter ADD COLUMN IF NOT EXISTS confirmed_at timestamptz;
+UPDATE newsletter SET token = md5(random()::text || email || clock_timestamp()::text) WHERE token IS NULL;
+CREATE TABLE IF NOT EXISTS withdrawals (
+  id text PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now(), name text NOT NULL, email text NOT NULL,
+  order_ref text NOT NULL, order_id text REFERENCES orders(id) ON DELETE SET NULL, items text NOT NULL DEFAULT '',
+  handled_at timestamptz
+);
+ALTER TABLE withdrawals ENABLE ROW LEVEL SECURITY;
+-- Shipping now always costs money: remove an old "free shipping" banner.
+UPDATE settings SET data = data || '{"banner":""}'::jsonb WHERE data->>'banner' ILIKE '%kostenlos%versand%';
 `;
 
 let done: Promise<void> | null = null;

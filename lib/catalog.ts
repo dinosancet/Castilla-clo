@@ -29,6 +29,10 @@ export type Product = {
   isNew: boolean;
   /** Commission for creators in percent of the item price (0 = no links). */
   commissionPercent: number;
+  /** Fibre composition (Textilkennzeichnung), e.g. "100 % Baumwolle". */
+  material: string;
+  /** Care instructions. */
+  care: string;
   /** All photos in display order. */
   images: string[];
   /** Shortcuts: first and second photo. */
@@ -49,7 +53,35 @@ export type Settings = {
   commissionHoldDays: number;
   /** How long a click on a creator link counts for a purchase. */
   refCookieDays: number;
+  /** Seller / legal notice (Impressum). */
+  legalOwner: string;
+  legalBusiness: string;
+  legalStreet: string;
+  legalZipCity: string;
+  legalEmail: string;
+  legalPhone: string;
+  /** USt-IdNr. per § 27a UStG, empty if none. */
+  vatId: string;
+  /** Kleinunternehmer per § 19 UStG: no VAT is charged or shown. */
+  smallBusiness: boolean;
+  shippingCents: number;
+  /** Free shipping from this order value; 0 = never free. */
+  freeShippingFromCents: number;
+  /** Bank details for prepayment, sent with the order confirmation. */
+  bankDetails: string;
+  /** Optional replacement texts for the legal pages (empty = generated text). */
+  legalOverrides: Partial<Record<LegalPage, string>>;
 };
+
+export type LegalPage = "impressum" | "datenschutz" | "agb" | "widerruf" | "versand" | "partnerbedingungen";
+export const LEGAL_PAGES: { key: LegalPage; label: string; href: string }[] = [
+  { key: "impressum", label: "Impressum", href: "/impressum" },
+  { key: "datenschutz", label: "Datenschutz", href: "/datenschutz" },
+  { key: "agb", label: "AGB", href: "/agb" },
+  { key: "widerruf", label: "Widerrufsbelehrung", href: "/widerruf" },
+  { key: "versand", label: "Versand & Zahlung", href: "/versand" },
+  { key: "partnerbedingungen", label: "Partnerprogramm", href: "/partnerbedingungen" },
+];
 
 export const DEFAULT_SETTINGS: Settings = {
   banner: "",
@@ -58,10 +90,30 @@ export const DEFAULT_SETTINGS: Settings = {
   dropName: "",
   dropText: "",
   dropAt: null,
-  shippingText: "Versand innerhalb Deutschlands in 2–4 Werktagen.\nRückgabe innerhalb von 14 Tagen nach Erhalt.",
+  shippingText: "Versand innerhalb Deutschlands, Lieferzeit 2–4 Werktage nach Zahlungseingang.\n14 Tage Widerrufsrecht. Die Kosten der Rücksendung trägst du.",
   commissionHoldDays: 21,
   refCookieDays: 30,
+  legalOwner: "",
+  legalBusiness: "Vectresscorp",
+  legalStreet: "Eschauer Allee 10",
+  legalZipCity: "",
+  legalEmail: "Vectresscorp@web.de",
+  legalPhone: "",
+  vatId: "",
+  smallBusiness: false,
+  shippingCents: 495,
+  freeShippingFromCents: 0,
+  bankDetails: "",
+  legalOverrides: {},
 };
+
+type ShopTerms = Pick<Settings, "shippingCents" | "freeShippingFromCents" | "smallBusiness">;
+export function shippingFor(subtotalCents: number, t: ShopTerms) {
+  if (subtotalCents <= 0) return 0;
+  return t.freeShippingFromCents > 0 && subtotalCents >= t.freeShippingFromCents ? 0 : t.shippingCents;
+}
+/** Short price note next to prices. */
+export const taxNote = (t: ShopTerms) => (t.smallBusiness ? "Kein Ausweis der USt. (§ 19 UStG)" : "inkl. MwSt.");
 
 export type OrderStatus = "neu" | "bezahlt" | "versendet" | "storniert" | "retourniert";
 export const FINAL_STATUSES: OrderStatus[] = ["storniert", "retourniert"];
@@ -84,6 +136,11 @@ export type Order = {
   customer: Customer;
   shippedAt: string | null;
   refCode: string | null;
+  shippingCents: number;
+};
+
+export type Withdrawal = {
+  id: string; createdAt: string; name: string; email: string; orderRef: string; orderId: string | null; items: string; handled: boolean;
 };
 
 export type CommissionStatus = "vorgemerkt" | "freigegeben" | "ausgezahlt" | "storniert";

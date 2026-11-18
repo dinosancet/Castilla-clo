@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getOrder, getSettings } from "@/lib/data";
 import { linksForOrder } from "@/lib/affiliate";
-import { linkUrl, partnerUrl } from "@/lib/site";
+import { linkUrl } from "@/lib/site";
 import CopyLink from "@/components/CopyLink";
 import { STATUS_LABEL, eur } from "@/lib/catalog";
 
@@ -26,7 +26,7 @@ export default async function OrderPage({ searchParams }: { searchParams: Promis
         <div style={{ marginTop: 12, fontSize: 14 }}>
           {order.items.map((i, n) => <div key={n}>{i.qty} × {i.name}, {i.size}</div>)}
         </div>
-        <div style={{ marginTop: 10 }}>{eur(order.totalCents)}</div>
+        <div style={{ marginTop: 10 }}>{eur(order.totalCents)}{order.shippingCents ? <span className="small"> inkl. {eur(order.shippingCents)} Versand</span> : null}</div>
       </div>
       {links.length ? (
         <section className="earn">
@@ -40,11 +40,11 @@ export default async function OrderPage({ searchParams }: { searchParams: Promis
           ))}
           <p className="small">
             Die Provision wird {settings.commissionHoldDays} Tage nach Versand der vermittelten Bestellung freigegeben, also nach Ablauf der Rückgabefrist. Bitte kennzeichne deine Beiträge als Werbung.
-            {token ? <> Klicks, Verkäufe und deine Provision siehst du im <Link className="textlink" style={{ textTransform: "none", letterSpacing: 0 }} href={partnerUrl(token).replace(/^https?:\/\/[^/]+/, "")}>Partnerbereich</Link>.</> : null}
+            {token ? <> Klicks, Verkäufe und deine Provision siehst du in <Link className="textlink" style={{ textTransform: "none", letterSpacing: 0 }} href="/konto">deinem Konto</Link>. Melde dich dort mit deiner E-Mail-Adresse an.</> : null}
           </p>
         </section>
       ) : null}
-      <p className="small">Speichere dir diese Seite, um den Status später nachzusehen.</p>
+      <p className="small">Speichere dir diese Seite, um den Status später nachzusehen. Du möchtest die Bestellung widerrufen? <Link className="textlink" style={{ textTransform: "none", letterSpacing: 0 }} href={`/widerrufen?bestellung=${order.id}`}>Vertrag widerrufen</Link></p>
       <Link className="btn" href="/shop">Weiter einkaufen</Link>
     </main>
   );

@@ -1,13 +1,14 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { CATEGORIES, CATEGORY_KEYS, COMMISSION_LABEL, FINAL_STATUSES, MAX_IMAGES, STATUS_LABEL, eur, sizesOf, stockOf, type Category, type Commission, type Creator, type CreatorLink, type Order, type OrderStatus, type Product, type Settings } from "@/lib/catalog";
+import { Fragment, useState } from "react";
+import { CATEGORIES, CATEGORY_KEYS, COMMISSION_LABEL, FINAL_STATUSES, MAX_IMAGES, STATUS_LABEL, eur, sizesOf, stockOf, type Category, type Commission, type Creator, type CreatorLink, type Order, type OrderStatus, type Product, type Settings, type Withdrawal, LEGAL_PAGES, type LegalPage } from "@/lib/catalog";
 import { uploadImage } from "@/lib/image-client";
+import type { CustomerRow } from "@/lib/customer";
 
 type Affiliate = { creators: Creator[]; links: CreatorLink[]; commissions: Commission[] };
-type Props = { products: Product[]; orders: Order[]; settings: Settings; subscribers: { email: string; createdAt: string }[]; affiliate: Affiliate };
-type Tab = "products" | "orders" | "creators" | "settings" | "subs";
+type Props = { products: Product[]; orders: Order[]; settings: Settings; subscribers: { email: string; createdAt: string; confirmed: boolean }[]; affiliate: Affiliate; customers: CustomerRow[]; mailReady: boolean; withdrawals: Withdrawal[]; legalMissing: string[]; generated: Record<string, string> };
+type Tab = "products" | "orders" | "withdrawals" | "customers" | "creators" | "settings" | "legal" | "subs";
 
 async function send(url: string, method: string, body?: unknown) {
   const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined }).catch(() => null);
@@ -16,7 +17,8 @@ async function send(url: string, method: string, body?: unknown) {
   return data;
 }
 
-export default function AdminDashboard({ products, orders, settings, subscribers, affiliate }: Props) {
+export default function AdminDashboard({ products, orders, settings, subscribers, affiliate, customers, mailReady, withdrawals, legalMissing, generated }: Props) {
+  const openW = withdrawals.filter((w) => !w.handled).length;
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("products");
   const open = orders.filter((o) => o.status === "neu").length;
@@ -31,25 +33,43 @@ export default function AdminDashboard({ products, orders, settings, subscribers
           <div><h1>Verwaltung</h1><p className="small">Änderungen sind sofort im Shop sichtbar.</p></div>
           <button className="link" onClick={logout}>Abmelden</button>
         </div>
+        {!mailReady ? (
+          <div className="earn" style={{ margin: "20px 0 0", padding: "14px 18px" }}>
+            <b style={{ fontWeight: 500 }}>E-Mail-Versand ist noch nicht eingerichtet.</b>{" "}
+            <span className="small">Ohne RESEND_API_KEY und MAIL_FROM in Vercel gibt es keine Bestellbestätigungen, keine Versandmails und Kunden können sich nicht anmelden.</span>
+          </div>
+        ) : null}
+        {legalMissing.length ? (
+          <div className="earn" style={{ margin: "12px 0 0", padding: "14px 18px", borderColor: "var(--danger)" }}>
+            <b style={{ fontWeight: 500 }}>Impressum unvollständig.</b>{" "}
+            <span className="small">Es fehlt: {legalMissing.join(", ")}. Bitte unter „Rechtliches &amp; Versand“ ergänzen, bevor du verkaufst.</span>{" "}
+            <button className="link" onClick={() => setTab("legal")}>Jetzt ergänzen</button>
+          </div>
+        ) : null}
         <div className="tabs" role="tablist">
-          {([["products", "Produkte"], ["orders", `Bestellungen${open ? ` (${open})` : ""}`], ["creators", `Creators${affiliate.creators.length ? ` (${affiliate.creators.length})` : ""}`], ["settings", "Startseite & Drop"], ["subs", "Newsletter"]] as [Tab, string][]).map(([k, l]) => (
+          {([["products", "Produkte"], ["orders", `Bestellungen${open ? ` (${open})` : ""}`], ["withdrawals", `Widerrufe${openW ? ` (${openW})` : ""}`], ["customers", `Kunden (${customers.length})`], ["creators", `Creators${affiliate.creators.length ? ` (${affiliate.creators.length})` : ""}`], ["settings", "Startseite & Drop"], ["legal", "Rechtliches & Versand"], ["subs", "Newsletter"]] as [Tab, string][]).map(([k, l]) => (
             <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{l}</button>
           ))}
         </div>
         {tab === "products" && <ProductsPanel products={products} onChange={() => router.refresh()} />}
         {tab === "orders" && <OrdersPanel orders={orders} affiliate={affiliate} onChange={() => router.refresh()} />}
+        {tab === "customers" && <CustomersPanel customers={customers} orders={orders} affiliate={affiliate} openCreator={() => setTab("creators")} />}
         {tab === "creators" && <CreatorsPanel affiliate={affiliate} holdDays={settings.commissionHoldDays} onChange={() => router.refresh()} />}
         {tab === "settings" && <SettingsPanel settings={settings} onChange={() => router.refresh()} />}
+        {tab === "legal" && <LegalPanel settings={settings} generated={generated} onChange={() => router.refresh()} />}
+        {tab === "withdrawals" && <WithdrawalsPanel withdrawals={withdrawals} orders={orders} onChange={() => router.refresh()} />}
         {tab === "subs" && (
           <div className="table-wrap">
             <table>
-              <thead><tr><th>E-Mail</th><th>Angemeldet am</th></tr></thead>
+              <thead><tr><th>E-Mail</th><th>Angemeldet am</th><th>Status</th></tr></thead>
               <tbody>
                 {subscribers.length ? subscribers.map((s) => (
-                  <tr key={s.email}><td>{s.email}</td><td>{new Date(s.createdAt).toLocaleDateString("de-DE")}</td></tr>
-                )) : <tr><td colSpan={2} className="small">Noch keine Anmeldungen.</td></tr>}
+                  <tr key={s.email}><td>{s.email}</td><td>{new Date(s.createdAt).toLocaleDateString("de-DE")}</td>
+                    <td>{s.confirmed ? <span className="pill on">Bestätigt</span> : <span className="pill">Unbestätigt</span>}</td></tr>
+                )) : <tr><td colSpan={3} className="small">Noch keine Anmeldungen.</td></tr>}
               </tbody>
             </table>
+            <p className="small">Newsletter nur an bestätigte Adressen senden. Unbestätigte Anmeldungen (auch alle aus der Zeit vor dem Double-Opt-in) dürfen nicht angeschrieben werden.</p>
           </div>
         )}
       </div>
@@ -82,7 +102,7 @@ function PhotoSlot({ label, url, onChange, maxEdge, setMsg }: { label: string; u
 }
 
 type SizeRow = { key: number; name: string; stock: string };
-type Draft = { id: string | null; name: string; price: string; commission: string; category: Category; sizes: SizeRow[]; color: string; description: string; isNew: boolean; images: string[] };
+type Draft = { id: string | null; name: string; price: string; commission: string; category: Category; sizes: SizeRow[]; color: string; description: string; material: string; care: string; isNew: boolean; images: string[] };
 let rowKey = 1;
 const row = (name: string, stock = "0"): SizeRow => ({ key: rowKey++, name, stock });
 const PRESETS: Record<string, string[]> = {
@@ -91,7 +111,7 @@ const PRESETS: Record<string, string[]> = {
   "One Size": ["One Size"],
   "Hosen 28–36": ["28", "30", "32", "34", "36"],
 };
-const emptyDraft = (): Draft => ({ id: null, name: "", price: "", commission: "10", category: "hoodie", sizes: PRESETS["S–XL"].map((n) => row(n)), color: "#2a2622", description: "", isNew: false, images: [] });
+const emptyDraft = (): Draft => ({ id: null, name: "", price: "", commission: "10", category: "hoodie", sizes: PRESETS["S–XL"].map((n) => row(n)), color: "#2a2622", description: "", material: "", care: "", isNew: false, images: [] });
 
 function PhotoManager({ images, onChange, setMsg }: { images: string[]; onChange: (imgs: string[]) => void; setMsg: (m: { ok: boolean; text: string } | null) => void }) {
   const [busy, setBusy] = useState(0);
@@ -198,7 +218,7 @@ function ProductsPanel({ products, onChange }: { products: Product[]; onChange: 
     setD({
       id: p.id, name: p.name, price: (p.priceCents / 100).toFixed(2), commission: String(p.commissionPercent), category: p.category,
       sizes: sizesOf(p).map((n) => row(n, String(stockOf(p, n)))),
-      color: p.color, description: p.description, isNew: p.isNew, images: p.images,
+      color: p.color, description: p.description, material: p.material, care: p.care, isNew: p.isNew, images: p.images,
     });
     setMsg(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -207,13 +227,14 @@ function ProductsPanel({ products, onChange }: { products: Product[]; onChange: 
     e.preventDefault();
     const sizes = d.sizes.map((r) => ({ name: r.name.trim(), stock: Math.max(0, parseInt(r.stock, 10) || 0) })).filter((r) => r.name);
     if (!sizes.length) return setMsg({ ok: false, text: "Lege mindestens eine Größe an, zum Beispiel „One Size“." });
+    if (!d.material.trim() && !confirm("Ohne Materialangabe ist das Produkt rechtlich angreifbar. Trotzdem speichern?")) return;
     const price = Math.round(parseFloat(d.price.replace(",", ".")) * 100);
     if (!Number.isFinite(price)) return setMsg({ ok: false, text: "Bitte gib einen gültigen Preis ein." });
     const commissionPercent = d.commission.trim() === "" ? 0 : Math.round(parseFloat(d.commission.replace(",", ".")) * 100) / 100;
     if (!Number.isFinite(commissionPercent) || commissionPercent < 0 || commissionPercent > 90) return setMsg({ ok: false, text: "Die Provision muss zwischen 0 und 90 % liegen." });
     setBusy(true);
     setMsg(null);
-    const body = { name: d.name.trim(), priceCents: price, commissionPercent, category: d.category, sizes, color: d.color, description: d.description.trim(), isNew: d.isNew, images: d.images };
+    const body = { name: d.name.trim(), priceCents: price, commissionPercent, category: d.category, sizes, color: d.color, description: d.description.trim(), material: d.material.trim(), care: d.care.trim(), isNew: d.isNew, images: d.images };
     try {
       if (d.id) await send(`/api/admin/products?id=${encodeURIComponent(d.id)}`, "PUT", body);
       else await send("/api/admin/products", "POST", body);
@@ -257,6 +278,11 @@ function ProductsPanel({ products, onChange }: { products: Product[]; onChange: 
           <SizeEditor sizes={d.sizes} onChange={(rows) => set("sizes", rows)} />
         </div>
         <label className="l full">Beschreibung<textarea className="field" rows={3} value={d.description} onChange={(e) => set("description", e.target.value)} /></label>
+        <label className="l">Material (Pflichtangabe)
+          <input className="field" value={d.material} onChange={(e) => set("material", e.target.value)} placeholder="z. B. 100 % Baumwolle" />
+          <span className="small">Faseranteile in Prozent, nur zulässige Faserbezeichnungen (Baumwolle, Polyester, Elasthan …).</span>
+        </label>
+        <label className="l">Pflegehinweise (optional)<input className="field" value={d.care} onChange={(e) => set("care", e.target.value)} placeholder="z. B. 30 °C, links gewaschen, nicht in den Trockner" /></label>
         <div className="full">
           <div className="l" style={{ marginBottom: 4 }}>Fotos</div>
           <div className="small" style={{ marginBottom: 10 }}>Bis zu {MAX_IMAGES} Fotos. Reihenfolge per Ziehen oder mit ← → ändern. Das erste ist das Hauptbild, das zweite erscheint im Shop beim Darüberfahren. Am besten Hochformat 3:4 auf hellem Hintergrund.</div>
@@ -476,6 +502,183 @@ function CreatorsPanel({ affiliate, holdDays, onChange }: { affiliate: Affiliate
                 ) : <p className="small">Noch keine Verkäufe über diese Links.</p>}
               </div>
             ) : null}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function CustomersPanel({ customers, orders, affiliate, openCreator }: { customers: CustomerRow[]; orders: Order[]; affiliate: Affiliate; openCreator: () => void }) {
+  const [q, setQ] = useState("");
+  const [filter, setFilter] = useState<"all" | "account" | "creator" | "newsletter">("all");
+  const [open, setOpen] = useState<string | null>(null);
+  const t = q.trim().toLowerCase();
+  const list = customers.filter((c) =>
+    (filter === "all" || (filter === "account" && c.hasAccount) || (filter === "creator" && c.creatorId) || (filter === "newsletter" && c.newsletter)) &&
+    (!t || `${c.name} ${c.email} ${c.address}`.toLowerCase().includes(t)));
+  const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("de-DE") : "–");
+  return (
+    <>
+      <div className="kpis">
+        <div><b>{customers.length}</b><span>Kunden</span></div>
+        <div><b>{customers.filter((c) => c.hasAccount).length}</b><span>Mit Konto</span></div>
+        <div><b>{customers.filter((c) => c.orders > 1).length}</b><span>Wiederkäufer</span></div>
+        <div><b>{eur(customers.reduce((a, c) => a + c.spentCents, 0))}</b><span>Umsatz gesamt</span></div>
+      </div>
+      <div className="toolbar" style={{ marginTop: 18, flexWrap: "wrap" }}>
+        <input className="field" style={{ maxWidth: 360 }} placeholder="Name, E-Mail oder Adresse suchen" value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="chiprow" style={{ margin: 0 }}>
+          {([["all", "Alle"], ["account", "Mit Konto"], ["creator", "Creators"], ["newsletter", "Newsletter"]] as const).map(([k, l]) => (
+            <button key={k} type="button" aria-pressed={filter === k} onClick={() => setFilter(k)}>{l}</button>
+          ))}
+        </div>
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th>Kunde</th><th>Bestellungen</th><th>Umsatz</th><th>Letzte Bestellung</th><th>Konto</th><th></th></tr></thead>
+          <tbody>
+            {list.map((c) => {
+              const own = orders.filter((o) => o.customer.email.toLowerCase() === c.email);
+              const creator = c.creatorId ? affiliate.creators.find((x) => x.id === c.creatorId) : null;
+              return (
+                <Fragment key={c.email}>
+                  <tr>
+                    <td>
+                      {c.name || "–"}
+                      {creator ? <span className="pill on">Creator</span> : null}
+                      {c.newsletter ? <span className="pill">Newsletter</span> : null}
+                      <div className="small"><a href={`mailto:${c.email}`}>{c.email}</a></div>
+                    </td>
+                    <td>{c.orders}</td>
+                    <td>{eur(c.spentCents)}</td>
+                    <td>{fmt(c.lastOrderAt)}</td>
+                    <td className="small">{c.hasAccount ? `seit ${fmt(c.createdAt)}${c.lastLoginAt ? `, zuletzt ${fmt(c.lastLoginAt)}` : ""}` : "Gast"}</td>
+                    <td><button className="link" onClick={() => setOpen(open === c.email ? null : c.email)}>{open === c.email ? "Schließen" : "Kartei"}</button></td>
+                  </tr>
+                  {open === c.email ? (
+                    <tr>
+                      <td colSpan={6} style={{ background: "var(--surface)" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: 18, padding: "8px 0" }}>
+                          <div className="small">
+                            <div><b style={{ color: "var(--ink)", fontWeight: 500 }}>Adresse</b></div>
+                            {c.address || "–"}
+                            <div style={{ marginTop: 10 }}><b style={{ color: "var(--ink)", fontWeight: 500 }}>Kunde seit</b></div>
+                            {fmt(c.createdAt)}
+                          </div>
+                          <div className="small">
+                            <div><b style={{ color: "var(--ink)", fontWeight: 500 }}>Bestellungen</b></div>
+                            {own.length ? own.map((o) => (
+                              <div key={o.id}>{fmt(o.createdAt)} · Nr. {o.id} · {eur(o.totalCents)} · {STATUS_LABEL[o.status]}</div>
+                            )) : "–"}
+                          </div>
+                          <div className="small">
+                            <div><b style={{ color: "var(--ink)", fontWeight: 500 }}>Provision</b></div>
+                            {creator ? (
+                              <>
+                                {creator.links} Links · {creator.clicks} Klicks · {creator.sales} Käufe<br />
+                                Vorgemerkt {eur(creator.pendingCents)} · Frei {eur(creator.releasedCents)} · Ausgezahlt {eur(creator.paidCents)}<br />
+                                <button className="link" onClick={openCreator}>Zu den Creators</button>
+                              </>
+                            ) : "Kein Creator"}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              );
+            })}
+            {!list.length ? <tr><td colSpan={6} className="small">Keine Kunden gefunden.</td></tr> : null}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+function LegalPanel({ settings, generated, onChange }: { settings: Settings; generated: Record<string, string>; onChange: () => void }) {
+  const [s, setS] = useState({ ...settings, shipping: (settings.shippingCents / 100).toFixed(2), free: settings.freeShippingFromCents ? (settings.freeShippingFromCents / 100).toFixed(2) : "" });
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const set = (k: keyof typeof s, v: unknown) => setS((x) => ({ ...x, [k]: v }));
+  const setOverride = (k: LegalPage, v: string) => setS((x) => ({ ...x, legalOverrides: { ...x.legalOverrides, [k]: v } }));
+  const euros = (v: string) => Math.max(0, Math.round((parseFloat(v.replace(",", ".")) || 0) * 100));
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    const { shipping, free, ...rest } = s;
+    const overrides = Object.fromEntries(Object.entries(rest.legalOverrides).filter(([, v]) => v && v.trim()));
+    try {
+      await send("/api/admin/settings", "PUT", { ...rest, shippingCents: euros(shipping), freeShippingFromCents: euros(free), legalOverrides: overrides });
+      setMsg({ ok: true, text: "Gespeichert. Impressum, AGB und alle Rechtstexte sind aktualisiert." });
+      onChange();
+    } catch (err: any) { setMsg({ ok: false, text: err.message }); }
+  }
+  return (
+    <form className="pform" onSubmit={save}>
+      <div className="full"><div className="l">Verkäufer (Impressum)</div><div className="small">Diese Angaben erscheinen im Impressum, in AGB, Widerrufsbelehrung, Bestellmails und als Herstellerangabe auf jeder Produktseite.</div></div>
+      <label className="l">Vor- und Nachname des Inhabers *<input className="field" value={s.legalOwner} onChange={(e) => set("legalOwner", e.target.value)} placeholder="Max Mustermann" /></label>
+      <label className="l">Geschäftsbezeichnung<input className="field" value={s.legalBusiness} onChange={(e) => set("legalBusiness", e.target.value)} /></label>
+      <label className="l">Straße und Hausnummer *<input className="field" value={s.legalStreet} onChange={(e) => set("legalStreet", e.target.value)} /></label>
+      <label className="l">PLZ und Ort *<input className="field" value={s.legalZipCity} onChange={(e) => set("legalZipCity", e.target.value)} placeholder="12345 Musterstadt" /></label>
+      <label className="l">E-Mail *<input className="field" type="email" value={s.legalEmail} onChange={(e) => set("legalEmail", e.target.value)} /></label>
+      <label className="l">Telefon (optional)<input className="field" value={s.legalPhone} onChange={(e) => set("legalPhone", e.target.value)} /></label>
+      <label className="l">USt-IdNr. (§ 27a UStG, leer wenn keine)<input className="field" value={s.vatId} onChange={(e) => set("vatId", e.target.value)} placeholder="DE123456789" /></label>
+      <label className="l" style={{ alignSelf: "end" }}><span><input type="checkbox" checked={s.smallBusiness} onChange={(e) => set("smallBusiness", e.target.checked)} /> Kleinunternehmer nach § 19 UStG (keine Umsatzsteuer)</span></label>
+
+      <div className="full" style={{ marginTop: 10 }}><div className="l">Versand &amp; Zahlung</div></div>
+      <label className="l">Versandkosten Deutschland (€)<input className="field" inputMode="decimal" value={s.shipping} onChange={(e) => set("shipping", e.target.value)} /></label>
+      <label className="l">Kostenloser Versand ab (€, leer = nie)<input className="field" inputMode="decimal" value={s.free} onChange={(e) => set("free", e.target.value)} /></label>
+      <label className="l full">Bankverbindung für Vorkasse (steht in jeder Bestellbestätigung)
+        <textarea className="field" rows={3} value={s.bankDetails} onChange={(e) => set("bankDetails", e.target.value)} placeholder={"Kontoinhaber: Max Mustermann\nIBAN: DE…\nBank: …"} />
+      </label>
+
+      <div className="full" style={{ marginTop: 10 }}>
+        <div className="l">Rechtstexte</div>
+        <div className="small">Die Texte werden automatisch aus deinen Angaben erzeugt. Wenn du Texte von einem Rechtstexte-Dienst oder Anwalt hast, kannst du sie hier einfügen. Format: „## “ am Zeilenanfang für Überschriften, Leerzeile für neuen Absatz.</div>
+      </div>
+      {LEGAL_PAGES.map((p) => {
+        const custom = s.legalOverrides[p.key] !== undefined && s.legalOverrides[p.key] !== "";
+        return (
+          <div className="full" key={p.key} style={{ borderTop: "1px solid var(--line)", paddingTop: 10 }}>
+            <div className="row-actions" style={{ justifyContent: "space-between", alignItems: "center" }}>
+              <span>{p.label} <a className="link" href={p.href} target="_blank">ansehen</a></span>
+              <label className="small"><input type="checkbox" checked={custom} onChange={(e) => setOverride(p.key, e.target.checked ? generated[p.key] : "")} /> Eigenen Text verwenden</label>
+            </div>
+            {custom ? <textarea className="field" rows={12} style={{ marginTop: 8, fontSize: 13 }} value={s.legalOverrides[p.key]} onChange={(e) => setOverride(p.key, e.target.value)} /> : null}
+          </div>
+        );
+      })}
+      <div className="full"><button className="btn">Speichern</button><div className={`msg ${msg ? (msg.ok ? "ok" : "err") : ""}`}>{msg?.text}</div></div>
+    </form>
+  );
+}
+
+function WithdrawalsPanel({ withdrawals, orders, onChange }: { withdrawals: Withdrawal[]; orders: Order[]; onChange: () => void }) {
+  const [err, setErr] = useState("");
+  async function toggle(w: Withdrawal) {
+    try { await send(`/api/admin/widerrufe?id=${encodeURIComponent(w.id)}`, "PATCH", { handled: !w.handled }); setErr(""); onChange(); }
+    catch (e: any) { setErr(e.message); }
+  }
+  if (!withdrawals.length) return <p className="small">Noch keine Widerrufe. Kunden widerrufen über die Schaltfläche „Vertrag widerrufen“ im Footer, ohne Anmeldung.</p>;
+  return (
+    <>
+      <p className="small">Nach Eingang der Rücksendung die Bestellung unter „Bestellungen“ auf „Retourniert“ setzen. Dann geht die Ware zurück ins Lager und eine Provision verfällt. Den Kaufpreis inklusive Versandkosten innerhalb von 14 Tagen erstatten.</p>
+      <div className="msg err">{err}</div>
+      {withdrawals.map((w) => {
+        const o = w.orderId ? orders.find((x) => x.id === w.orderId) : null;
+        return (
+          <div className="order" key={w.id} style={w.handled ? { opacity: 0.6 } : undefined}>
+            <div className="top">
+              <span>Bestellung {w.orderRef} <span className="small">{new Date(w.createdAt).toLocaleString("de-DE")}</span></span>
+              <span className={`pill ${w.handled ? "on" : "off"}`}>{w.handled ? "Erledigt" : "Offen"}</span>
+            </div>
+            <div style={{ marginTop: 10, fontSize: 14 }}>
+              {w.name} · <a href={`mailto:${w.email}`}>{w.email}</a><br />
+              Artikel: {w.items || "gesamte Bestellung"}<br />
+              {o ? <span className="small">Bestellung gefunden: {eur(o.totalCents)}, Status {STATUS_LABEL[o.status]}</span> : <span className="small" style={{ color: "var(--danger)" }}>Keine passende Bestellung zu Nummer und E-Mail gefunden, bitte manuell prüfen.</span>}
+            </div>
+            <div style={{ marginTop: 10 }}><button className="link" onClick={() => toggle(w)}>{w.handled ? "Wieder öffnen" : "Als erledigt markieren"}</button></div>
           </div>
         );
       })}
