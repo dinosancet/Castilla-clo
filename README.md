@@ -31,7 +31,11 @@ Eigene Domain: *Settings → Domains*.
 - Schutz vor Missbrauch: Käufe über den eigenen Link (gleiche E-Mail oder gleiche Lieferadresse) zählen nicht, Klicks werden pro Besucher und Tag nur einmal gezählt, Bots werden ignoriert, Creators lassen sich deaktivieren.
 - Creators sehen Klicks, Käufe und Provision im Partnerbereich (`/partner?t=…`) und hinterlegen dort ihre Auszahlungsdaten. Ausgezahlt wird manuell, danach in der Verwaltung „als ausgezahlt markieren“.
 
-## E-Mails (Bestellbestätigung)
+## Kundenkonto
+
+Kunden melden sich unter `/konto` mit ihrer E-Mail-Adresse an und bekommen einen 6-stelligen Code bzw. Anmeldelink per E-Mail (kein Passwort). Alle Bestellungen und Provisionslinks mit dieser Adresse erscheinen automatisch im Konto. Im Admin unter „Kunden“ gibt es die Kundenkartei: alle Käufer und Konten, nach E-Mail zusammengeführt.
+
+## E-Mails (Bestellbestätigung, Versand, Anmeldung)
 
 E-Mails werden über [Resend](https://resend.com) verschickt. In Vercel unter *Environment Variables* eintragen:
 - `RESEND_API_KEY`: API-Schlüssel aus Resend

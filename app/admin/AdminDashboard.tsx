@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { Fragment, useState } from "react";
 import { CATEGORIES, CATEGORY_KEYS, COMMISSION_LABEL, FINAL_STATUSES, MAX_IMAGES, STATUS_LABEL, eur, sizesOf, stockOf, type Category, type Commission, type Creator, type CreatorLink, type Order, type OrderStatus, type Product, type Settings, type Withdrawal, LEGAL_PAGES, type LegalPage } from "@/lib/catalog";
-import { uploadImage } from "@/lib/image-client";
+import { reframeExisting, uploadImage } from "@/lib/image-client";
 import type { CustomerRow } from "@/lib/customer";
 
 type Affiliate = { creators: Creator[]; links: CreatorLink[]; commissions: Commission[] };
@@ -143,8 +143,26 @@ function PhotoManager({ images, onChange, setMsg }: { images: string[]; onChange
       setMsg({ ok: true, text: `${added.length} ${added.length === 1 ? "Foto" : "Fotos"} hochgeladen. Jetzt speichern, damit sie im Shop erscheinen.` });
     }
   }
+  /** Cleans up photos uploaded before automatic framing existed: removes bars and fits them into the 3:4 frame. */
+  async function reframeAll() {
+    if (!images.length) return;
+    setBusy(images.length);
+    setMsg(null);
+    const next: string[] = [];
+    let failed = 0;
+    for (const src of images) {
+      try { next.push(await reframeExisting(src)); }
+      catch { next.push(src); failed++; }
+      setBusy((n) => n - 1);
+    }
+    onChange(next);
+    setMsg(failed
+      ? { ok: false, text: `${failed} von ${images.length} Fotos konnten nicht angepasst werden. Lade sie bitte neu hoch.` }
+      : { ok: true, text: "Fotos angepasst. Jetzt speichern, damit sie im Shop erscheinen." });
+  }
 
   return (
+    <>
     <div className="photos">
       {images.map((src, i) => (
         <div
@@ -175,6 +193,12 @@ function PhotoManager({ images, onChange, setMsg }: { images: string[]; onChange
         </label>
       ) : null}
     </div>
+    {images.length ? (
+      <button type="button" className="link" style={{ marginTop: 10 }} disabled={!!busy} onClick={reframeAll}>
+        {busy ? "Fotos werden angepasst …" : "Fotos in den Rahmen einpassen (Ränder entfernen, auf 3:4 bringen)"}
+      </button>
+    ) : null}
+    </>
   );
 }
 
@@ -285,7 +309,7 @@ function ProductsPanel({ products, onChange }: { products: Product[]; onChange: 
         <label className="l">Pflegehinweise (optional)<input className="field" value={d.care} onChange={(e) => set("care", e.target.value)} placeholder="z. B. 30 °C, links gewaschen, nicht in den Trockner" /></label>
         <div className="full">
           <div className="l" style={{ marginBottom: 4 }}>Fotos</div>
-          <div className="small" style={{ marginBottom: 10 }}>Bis zu {MAX_IMAGES} Fotos. Reihenfolge per Ziehen oder mit ← → ändern. Das erste ist das Hauptbild, das zweite erscheint im Shop beim Darüberfahren. Am besten Hochformat 3:4 auf hellem Hintergrund.</div>
+          <div className="small" style={{ marginBottom: 10 }}>Bis zu {MAX_IMAGES} Fotos. Neue Fotos werden automatisch in den Rahmen eingepasst: einfarbige Ränder werden entfernt und das Foto mit seiner Hintergrundfarbe auf 3:4 ergänzt. Reihenfolge per Ziehen oder mit ← → ändern. Das erste ist das Hauptbild, das zweite erscheint im Shop beim Darüberfahren. Am besten Hochformat 3:4 auf hellem Hintergrund.</div>
           <PhotoManager images={d.images} onChange={(imgs) => set("images", imgs)} setMsg={setMsg} />
         </div>
         <label className="l full"><span><input type="checkbox" checked={d.isNew} onChange={(e) => set("isNew", e.target.checked)} /> Als „Neu“ markieren</span></label>

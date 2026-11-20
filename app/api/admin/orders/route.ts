@@ -3,6 +3,8 @@ import { z } from "zod";
 import { sql } from "@/lib/db";
 import { ready } from "@/lib/migrate";
 import { badRequest, requireAdmin } from "@/lib/admin";
+import { getOrder } from "@/lib/data";
+import { sendShippingNotice } from "@/lib/mail";
 
 // PATCH /api/admin/orders?id=...
 export async function PATCH(req: Request) {
@@ -40,9 +42,20 @@ export async function PATCH(req: Request) {
   }
 
   const rows = await sql()`
+    WITH before AS (SELECT shipped_at FROM orders WHERE id = ${id})
     UPDATE orders SET status = ${status},
-      shipped_at = CASE WHEN ${status} = 'versendet' THEN COALESCE(shipped_at, now()) ELSE shipped_at END
-    WHERE id = ${id} AND status NOT IN ('storniert','retourniert') RETURNING id`;
+      shipped_at = CASE WHEN ${status} = 'versendet' THEN COALESCE(orders.shipped_at, now()) ELSE orders.shipped_at END
+    WHERE id = ${id} AND status NOT IN ('storniert','retourniert')
+    RETURNING (SELECT shipped_at FROM before) IS NULL AS first_shipping`;
   if (!rows.length) return NextResponse.json({ error: "Stornierte oder retournierte Bestellungen lassen sich nicht mehr ändern." }, { status: 409 });
+  // Tell the customer once, the first time the order is marked as shipped.
+  if (status === "versendet" && rows[0].first_shipping) {
+    try {
+      const order = await getOrder(id);
+      if (order) await sendShippingNotice(order);
+    } catch (err) {
+      console.error("shipping mail failed", err);
+    }
+  }
   return NextResponse.json({ ok: true });
 }

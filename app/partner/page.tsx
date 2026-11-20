@@ -32,7 +32,7 @@ export default async function PartnerPage({ searchParams }: { searchParams: Prom
         <div className="sec-title"><h2>Deine Links</h2></div>
         {links.map((l) => (
           <div key={l.code} className="order">
-            <div className="top"><span>{l.productName}</span><span className="small">{l.clicks} Klicks · {l.sales} Käufe · {eur(l.earnedCents)}</span></div>
+            <div className="top"><span>{l.productName}</span><span className="small">{l.clicks} Klicks · {l.sales} {l.sales === 1 ? "Kauf" : "Käufe"} · {eur(l.earnedCents)}</span></div>
             <div style={{ marginTop: 10 }}><CopyLink url={linkUrl(l.code)} /></div>
           </div>
         ))}
